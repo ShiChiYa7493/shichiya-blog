@@ -1,0 +1,12 @@
+{
+  "name": "shichiya-blog",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "dev:server": "npm run dev -w packages/server",
+    "dev:frontend": "npm run dev -w packages/frontend",
+    "build:server": "npm run build -w packages/server",
+    "build:frontend": "npm run build -w packages/frontend",
+    "build": "npm run build:server && npm run build:frontend"
+  }
+}

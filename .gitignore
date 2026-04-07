@@ -1,0 +1,16 @@
+node_modules/
+packages/frontend/.next/
+packages/server/dist/
+.env
+.env.local
+.env.production
+packages/frontend/.env*
+packages/server/.env*
+uploads/*
+!uploads/.gitkeep
+.DS_Store
+.vscode/
+.idea/
+*.log
+.superpowers/
+docs/
