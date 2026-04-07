@@ -1,0 +1,77 @@
+# Nginx configuration for shichiya.com + blog.shichiya.com
+# Copy this to /etc/nginx/sites-available/shichiya and symlink to sites-enabled
+# Then: sudo nginx -t && sudo systemctl reload nginx
+
+# Main site: shichiya.com
+server {
+    listen 80;
+    server_name shichiya.com www.shichiya.com;
+
+    location /uploads/ {
+        alias /home/shichiya/shichiya-blog/uploads/;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Blog: blog.shichiya.com
+server {
+    listen 80;
+    server_name blog.shichiya.com;
+
+    location /uploads/ {
+        alias /home/shichiya/shichiya-blog/uploads/;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Temporary: IP access (remove after domain is configured)
+server {
+    listen 80;
+    server_name 1.116.119.240;
+
+    location /uploads/ {
+        alias /home/shichiya/shichiya-blog/uploads/;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
