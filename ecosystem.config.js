@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'blog-api',
       cwd: './packages/server',
-      script: 'dist/main.js',
+      script: 'dist/src/main.js',
       env: { PORT: 3001, NODE_ENV: 'production' }
     },
     {
