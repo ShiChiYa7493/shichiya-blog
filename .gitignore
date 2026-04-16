@@ -6,6 +6,8 @@ packages/server/dist/
 .env.production
 packages/frontend/.env*
 packages/server/.env*
+!packages/frontend/.env.example
+!packages/server/.env.example
 uploads/*
 !uploads/.gitkeep
 .DS_Store
