@@ -1,11 +1,11 @@
-# Nginx configuration for shichiya.com + blog.shichiya.com
+# Nginx configuration for shichiya.cn + blog.shichiya.cn
 # Copy this to /etc/nginx/sites-available/shichiya and symlink to sites-enabled
 # Then: sudo nginx -t && sudo systemctl reload nginx
 
-# Main site: shichiya.com
+# Main site: shichiya.cn
 server {
     listen 80;
-    server_name shichiya.com www.shichiya.com;
+    server_name shichiya.cn www.shichiya.cn;
 
     location /uploads/ {
         alias /home/shichiya/shichiya-blog/uploads/;
@@ -28,10 +28,10 @@ server {
     }
 }
 
-# Blog: blog.shichiya.com
+# Blog: blog.shichiya.cn
 server {
     listen 80;
-    server_name blog.shichiya.com;
+    server_name blog.shichiya.cn;
 
     location /uploads/ {
         alias /home/shichiya/shichiya-blog/uploads/;
