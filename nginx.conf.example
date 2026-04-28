@@ -7,6 +7,9 @@ server {
     listen 80;
     server_name shichiya.cn www.shichiya.cn;
 
+    # Allow image uploads up to 50MB (default is 1MB → 413 on /api/admin/gallery)
+    client_max_body_size 50M;
+
     location /uploads/ {
         alias /home/shichiya/shichiya-blog/uploads/;
     }
@@ -32,6 +35,8 @@ server {
 server {
     listen 80;
     server_name blog.shichiya.cn;
+
+    client_max_body_size 50M;
 
     location /uploads/ {
         alias /home/shichiya/shichiya-blog/uploads/;
