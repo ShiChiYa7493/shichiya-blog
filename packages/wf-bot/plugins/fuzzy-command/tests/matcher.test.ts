@@ -23,9 +23,11 @@ describe('match — 精确与切分', () => {
     })
   })
 
-  it('参数粘连无空格：仍能切出命令与参数', () => {
+  it('参数粘连无空格：切出命令与参数，且标记为需改写', () => {
+    // 粘连写法 Koishi 自己解析不了，必须由中间件改写成 `遗物 后纪a2`，
+    // 所以这里是 fuzzy 而非 exact —— exact 的语义是「原文可直接解析」。
     expect(match('遗物后纪a2', CANDIDATES)).toEqual({
-      type: 'exact', canonical: '遗物', rest: '后纪a2',
+      type: 'fuzzy', canonical: '遗物', rest: '后纪a2',
     })
   })
 
