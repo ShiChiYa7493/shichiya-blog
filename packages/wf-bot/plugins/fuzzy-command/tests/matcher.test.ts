@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { match } from '../src/matcher'
+import { normalize } from '../src/normalize'
 import type { Candidate } from '../src/candidates'
 
 const CANDIDATES: Candidate[] = [
@@ -47,5 +48,25 @@ describe('match — 精确与切分', () => {
     // `遗物是什么` 以候选 `遗物` 开头，但后面不是参数而是聊天内容。
     // 真实参数形态必含字母数字（后纪a2 / 前纪b3），聊天不会。
     expect(match('遗物是什么', CANDIDATES)).toEqual({ type: 'none' })
+  })
+})
+
+describe('match — 拼音模糊', () => {
+  it('同音错字：钢铁裂逢 → 钢铁裂缝', () => {
+    expect(match('钢铁裂逢', CANDIDATES)).toEqual({
+      type: 'fuzzy', canonical: '钢铁裂缝', rest: '',
+    })
+  })
+
+  it('繁体输入经归一化后同样命中', () => {
+    // match 本身不做归一化，那是中间件的职责，所以测试里显式调用
+    expect(match(normalize('遺物 後紀a2'), CANDIDATES)).toEqual({
+      type: 'exact', canonical: '遗物', rest: '后纪a2',
+    })
+  })
+
+  it('过短的候选不参与模糊，避免误伤聊天', () => {
+    const short: Candidate[] = [{ canonical: '打', normalized: '打', command: 'x' }]
+    expect(match('大', short)).toEqual({ type: 'none' })
   })
 })

@@ -1,3 +1,4 @@
+import { pinyin } from 'pinyin-pro'
 import type { Candidate } from './candidates'
 
 export type MatchResult =
@@ -42,6 +43,18 @@ function splitByPrefix(input: string, candidates: Candidate[]) {
   return best
 }
 
+const pinyinCache = new Map<string, string>()
+
+/** 取无声调全拼并拼接，如 钢铁裂缝 → gangtieliefeng */
+function toPinyin(text: string): string {
+  let cached = pinyinCache.get(text)
+  if (cached === undefined) {
+    cached = pinyin(text, { toneType: 'none', type: 'array' }).join('')
+    pinyinCache.set(text, cached)
+  }
+  return cached
+}
+
 export function match(
   input: string,
   candidates: Candidate[],
@@ -54,6 +67,18 @@ export function match(
   const prefix = splitByPrefix(input, candidates)
   if (prefix) {
     return { type: 'exact', canonical: prefix.candidate.canonical, rest: prefix.rest }
+  }
+
+  const minFuzzyLength = options.minFuzzyLength ?? DEFAULT_MIN_FUZZY_LENGTH
+  const inputPinyin = toPinyin(input)
+
+  const hits = candidates.filter((candidate) =>
+    candidate.normalized.length >= minFuzzyLength
+    && toPinyin(candidate.normalized) === inputPinyin)
+
+  const commands = new Set(hits.map((hit) => hit.command))
+  if (commands.size === 1) {
+    return { type: 'fuzzy', canonical: hits[0].canonical, rest: '' }
   }
 
   return { type: 'none' }
