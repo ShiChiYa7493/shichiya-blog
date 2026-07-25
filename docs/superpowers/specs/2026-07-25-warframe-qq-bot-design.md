@@ -218,12 +218,40 @@ NapCat（第三方协议端，登录小号；官方渠道只推送 @机器人 �
 fork `CloudeaSoft/koishi-plugin-warframe`，改动集中在三处：
 
 1. **换皮**——渲染是 HTML + CSS + puppeteer（`src/components/render.tsx` 走 slot 模板注入 `assets/render.html` / `render.css` / `render-icons.svg`），改 CSS 与各 component 结构即可，不碰数据层。目标风格：深色、徽章化、高信息密度。
-2. **补命令**——`赏金`、`1999 日历`。
-   - 赏金：插件**已有数据管道**（`extractSyndicateMissionsRaw` 解析 `SyndicateMissions`，并已在请求 `oracle.browse.wf/bounty-cycle` 拿轮换），只是没开放用户命令。工作量主要在渲染模板。
-   - 1999 日历：数据在 `KnownCalendarSeasons`，同一个 worldstate 请求里，无需新增数据源。
-3. **统一出图**——`environment`（平原周期）目前输出纯文本，套用已有渲染设施改为出图。
+2. **补命令**——读过 fork 源码后修正（此前依据 npm README 的判断有误，该 README 滞后于 master）：
 
-组件只有 4 个文件（`render / wf / wfm / miscs`），改动面可控。持续成本是跟上游同步，但因改动集中在 CSS 与新增 command，冲突面小。
+   - **赏金：已完整实现，无需新增。** `src/commands/index.ts` 里已注册 6 个地点命令
+     （`bounty-cetus` / `fortuna` / `deimos` / `zariman` / `cavia` / `hex`），
+     且**本就出图**（`render(BountyComponent(...))`）。
+     此前沙盒里发 `赏金` 无响应，只是因为裸的「赏金」二字没被注册成别名——
+     别名都是带地点的组合（`希图斯赏金`、`地球赏金`、`赏金希图斯`）。
+     实际缺口仅为「一个不带地点的总览入口」，属可选增强。
+   - **1999 日历：确实缺失**，源码中无任何 calendar 实现。数据在 worldstate 的
+     `KnownCalendarSeasons`，同一个请求里已有，无需新增数据源。
+3. **统一出图**——`environment`（平原周期）是**唯一**不出图的命令，实现为
+   `environmentCommand: async () => getEnvironment()`，直接返回字符串。
+   其余命令均已走 `render(...)`。套用已有渲染设施改造即可。
+
+4. **移除周紫卡**——`riven-weekly` / `周紫卡` / `周卡`，其数据源 `docs.google.com` 在部署机不通。
+
+组件只有 4 个文件（`render / wf / wfm / miscs`），改动面可控。持续成本是跟上游同步，但因改动集中在 CSS 与少量 command，冲突面小。
+
+### 5.2b fork 的落地方式（已实测）
+
+- **目录必须命名为 `warframe`**。其架构测试中 `packageRoot()` 的实现是
+  `cwd.endsWith('warframe') ? cwd : resolve(cwd, 'external/warframe')`；
+  目录名不符会导致 22 个架构测试因路径解析错误而失败（曾误判为「上游测试不过」）。
+- **用 npm 即可，不需要 yarn 4**。仓库未声明 `packageManager`，`.yarnrc.yml`
+  仅设 `nodeLinker: node-modules`。实测 `npm install` + `npm run build`（yakumo + copy-assets）均正常。
+- **基线 474 个测试全绿**（47 个测试文件），其中包含架构约束测试
+  （资源必须经统一入口加载、CSS/SVG/HTML 不得内联进 `render.tsx`），
+  可作为改动不跑偏的护栏。
+- **放在 `packages/wf-bot/external/warframe`，并在博客仓库中 gitignore。**
+  理由：其一，GPL-3.0 代码不进入 Apache-2.0 的公开仓库，许可边界干净；
+  其二，`external/*` 正是上游 `yarn clone` 的预期布局，架构测试与之吻合；
+  其三，便于以自身 git remote 跟上游同步。
+  wf-bot 的 `workspaces` 需增加 `external/*` 以便 Koishi 解析该模块。
+  服务器部署时单独 clone，不随博客仓库分发。
 
 ### 5.3 渲染层
 
