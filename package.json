@@ -2,7 +2,8 @@
 	"name": "shichiya-blog",
 	"private": true,
 	"workspaces": [
-		"packages/*"
+		"packages/frontend",
+		"packages/server"
 	],
 	"scripts": {
 		"dev:server": "npm run start:dev -w packages/server",

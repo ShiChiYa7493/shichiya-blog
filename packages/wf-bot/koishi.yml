@@ -1,0 +1,12 @@
+plugins:
+  proxy-agent:rsx57u: {}
+  http:6alwgh: {}
+  database-memory:tw98ud: null
+  server:bqscj8:
+    port: 5140
+  console:mu7k9z: null
+  sandbox:z1ebfe: null
+  cron:hit8wo: null
+  puppeteer:15wod9: null
+  fuzzy-command:pjuh0j: null
+  warframe:18nqdk: null
