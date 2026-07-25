@@ -246,6 +246,19 @@ fork `CloudeaSoft/koishi-plugin-warframe`，改动集中在三处：
 - **基线 474 个测试全绿**（47 个测试文件），其中包含架构约束测试
   （资源必须经统一入口加载、CSS/SVG/HTML 不得内联进 `render.tsx`），
   可作为改动不跑偏的护栏。
+- ⚠️ **作为 workspace 成员时需要两处 `vitest.config.ts` 修复**（已在 fork 分支
+  `fix/workspace-test-resolution` 完成，与上游仅差这一个文件，可回馈上游）：
+  1. `koishi` 别名硬编码 `./node_modules/koishi/lib/index.cjs`，依赖被提升后该路径不存在，
+     导致 `tests/integration/index.spec.ts` 整体加载失败。改用 `require.resolve('koishi')`。
+  2. wf-bot 的其他依赖把 vite 提升到了 6.x，而配置里关闭 dev 转换用的是 vite 6 不认识的
+     `oxc` 键，于是 JSX 回落到 development 模式发出
+     `jsxDEV(type, props, key, isStatic, source, self)`。
+     由于 `@satorijs/element` 把 `jsx/jsxs/jsxDEV` 全部指向
+     `Element(type, attrs, ...children)`，多出的位置参数被当成 children，
+     普通对象触发 `TypeError: Invalid content: [object Object]`。
+     改用 vite 6 认识的 `esbuild: { jsx, jsxImportSource, jsxDev: false }` 锁定 production 转换。
+
+  两处都只影响测试环境，运行时（esbuild 打包产物）从未受影响。
 - **放在 `packages/wf-bot/external/warframe`，并在博客仓库中 gitignore。**
   理由：其一，GPL-3.0 代码不进入 Apache-2.0 的公开仓库，许可边界干净；
   其二，`external/*` 正是上游 `yarn clone` 的预期布局，架构测试与之吻合；
