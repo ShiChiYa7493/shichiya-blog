@@ -55,6 +55,39 @@ function toPinyin(text: string): string {
   return cached
 }
 
+/** 标准 Levenshtein 编辑距离，滚动数组实现 */
+function levenshtein(a: string, b: string): number {
+  if (a === b) return 0
+  if (!a.length) return b.length
+  if (!b.length) return a.length
+
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(
+        prev[j] + 1,
+        cur[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      )
+    }
+    prev = cur
+  }
+
+  return prev[b.length]
+}
+
+/**
+ * 候选越长，容错越宽。
+ * 两字及以下不容错 —— 短词容错会把正常聊天误判成命令。
+ */
+function maxDistanceFor(length: number): number {
+  if (length <= 2) return 0
+  if (length <= 5) return 1
+  return 2
+}
+
 export function match(
   input: string,
   candidates: Candidate[],
@@ -72,14 +105,29 @@ export function match(
   const minFuzzyLength = options.minFuzzyLength ?? DEFAULT_MIN_FUZZY_LENGTH
   const inputPinyin = toPinyin(input)
 
-  const hits = candidates.filter((candidate) =>
-    candidate.normalized.length >= minFuzzyLength
-    && toPinyin(candidate.normalized) === inputPinyin)
+  // 字符距离与拼音距离取小者：前者兜漏字与形近，后者兜同音错字
+  const scored = candidates
+    .filter((candidate) => candidate.normalized.length >= minFuzzyLength)
+    .map((candidate) => ({
+      candidate,
+      distance: Math.min(
+        levenshtein(input, candidate.normalized),
+        levenshtein(inputPinyin, toPinyin(candidate.normalized)),
+      ),
+    }))
+    .filter((entry) => entry.distance <= maxDistanceFor(entry.candidate.normalized.length))
+    .sort((a, b) => a.distance - b.distance)
 
-  const commands = new Set(hits.map((hit) => hit.command))
+  if (!scored.length) return { type: 'none' }
+
+  const best = scored[0].distance
+  const winners = scored.filter((entry) => entry.distance === best)
+  const commands = new Set(winners.map((entry) => entry.candidate.command))
+
+  // 同一命令的多个别名同分不算歧义，随便挑一个都对
   if (commands.size === 1) {
-    return { type: 'fuzzy', canonical: hits[0].canonical, rest: '' }
+    return { type: 'fuzzy', canonical: winners[0].candidate.canonical, rest: '' }
   }
 
-  return { type: 'none' }
+  return { type: 'ambiguous', canonical: winners.map((entry) => entry.candidate.canonical) }
 }

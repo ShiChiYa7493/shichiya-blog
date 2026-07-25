@@ -70,3 +70,34 @@ describe('match — 拼音模糊', () => {
     expect(match('大', short)).toEqual({ type: 'none' })
   })
 })
+
+describe('match — 编辑距离与歧义', () => {
+  it('漏字：钢铁裂 → 钢铁裂缝', () => {
+    expect(match('钢铁裂', CANDIDATES)).toEqual({
+      type: 'fuzzy', canonical: '钢铁裂缝', rest: '',
+    })
+  })
+
+  it('多个候选同分时返回歧义列表让用户选', () => {
+    const twins: Candidate[] = [
+      { canonical: '裂缝甲', normalized: '裂缝甲', command: 'a' },
+      { canonical: '裂缝乙', normalized: '裂缝乙', command: 'b' },
+    ]
+    const result = match('裂缝丙', twins)
+    expect(result.type).toBe('ambiguous')
+    expect((result as any).canonical.sort()).toEqual(['裂缝乙', '裂缝甲'])
+  })
+
+  it('同一命令的多个别名同分不算歧义', () => {
+    // 用四字别名：两字候选的容错阈值是 0，构造不出「同分」场景
+    const aliases: Candidate[] = [
+      { canonical: '钢铁裂缝', normalized: '钢铁裂缝', command: 'fissure-sp' },
+      { canonical: '钢铁裂隙', normalized: '钢铁裂隙', command: 'fissure-sp' },
+    ]
+    expect(match('钢铁裂缶', aliases).type).toBe('fuzzy')
+  })
+
+  it('差太远仍返回 none', () => {
+    expect(match('晚饭', CANDIDATES)).toEqual({ type: 'none' })
+  })
+})
