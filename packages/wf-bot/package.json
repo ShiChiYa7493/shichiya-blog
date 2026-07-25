@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "description": "Warframe QQ bot - 验证环境",
   "workspaces": [
-    "plugins/*"
+    "plugins/*",
+    "external/*"
   ],
   "scripts": {
     "start": "koishi start"
