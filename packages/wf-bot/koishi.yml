@@ -7,7 +7,8 @@ plugins:
   console:mu7k9z: null
   sandbox:z1ebfe: null
   cron:hit8wo: null
-  puppeteer:15wod9: null
+  puppeteer:15wod9:
+    executablePath: ${{ env.CHROME_PATH }}
   adapter-onebot:h6ryx8:
     protocol: ws
     endpoint: ws://127.0.0.1:3011
