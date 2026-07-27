@@ -19,6 +19,7 @@
     "@koishijs/plugin-server": "^3.2.9",
     "@satorijs/element": "^3.2.0",
     "koishi": "^4.18.11",
+    "koishi-plugin-adapter-onebot": "^6.9.4",
     "koishi-plugin-cron": "3.1.0",
     "koishi-plugin-puppeteer": "^3.9.0",
     "koishi-plugin-warframe": "^1.8.1"

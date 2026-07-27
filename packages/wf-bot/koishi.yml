@@ -8,5 +8,15 @@ plugins:
   sandbox:z1ebfe: null
   cron:hit8wo: null
   puppeteer:15wod9: null
-  fuzzy-command:pjuh0j: null
-  warframe:18nqdk: null
+  adapter-onebot:h6ryx8:
+    protocol: ws
+    endpoint: ws://127.0.0.1:3011
+    selfId: '1805790388'
+    token: ${{ env.ONEBOT_TOKEN }}
+  group:features:
+    $filter:
+      $in:
+        - $: guildId
+        - - '915943692'
+    fuzzy-command:pjuh0j: null
+    warframe:18nqdk: null

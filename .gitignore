@@ -6,6 +6,9 @@ packages/wf-bot/plugins/*/tsconfig.tsbuildinfo
 # external/ 是 koishi-plugin-warframe 的 fork（GPL-3.0，自带 git 仓库）。
 # 不随本仓库（Apache-2.0）分发，保持许可边界干净；部署时单独 clone。
 packages/wf-bot/external/
+# NapCat 的运行数据：ntqq/ 是 QQ 登录态，config/ 含 token，都不能入库
+packages/wf-bot/napcat/ntqq/
+packages/wf-bot/napcat/config/
 .env
 .env.local
 .env.production
