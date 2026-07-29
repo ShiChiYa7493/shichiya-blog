@@ -119,7 +119,15 @@ export function extendModels(ctx: Context): void {
 }
 
 export class EntertainmentStore {
-  constructor(private ctx: Context) {}
+  constructor(private ctx: Pick<Context, 'database'>) {}
+
+  async withTransaction<T>(callback: (store: EntertainmentStore) => Promise<T>): Promise<T> {
+    let result!: T
+    await this.ctx.database.withTransaction(async (database) => {
+      result = await callback(new EntertainmentStore({ database }))
+    })
+    return result
+  }
 
   async getProfile(guildId: string, userId: string): Promise<ProfileState> {
     const [profile] = await this.ctx.database.get('entertainment_profile', { guildId, userId })

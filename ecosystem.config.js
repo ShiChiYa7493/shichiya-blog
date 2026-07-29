@@ -22,8 +22,7 @@ module.exports = {
       // 它连的是 NapCat（Docker，宿主机 127.0.0.1:3011 → 容器 3001）。
       name: 'blog-bot',
       cwd: './packages/wf-bot',
-      script: 'node_modules/.bin/koishi',
-      args: 'start',
+      script: 'start.js',
       interpreter: '/opt/node22/bin/node',
       env: { NODE_ENV: 'production' }
     }

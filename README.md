@@ -36,11 +36,12 @@ shichiya-blog/
 │   │   └── src/app/
 │   │       ├── blog/                博客前台
 │   │       └── admin/               后台管理
-│   └── server/                      NestJS 应用（端口 3001）
+│   ├── server/                      NestJS 应用（端口 3001）
 │       ├── src/modules/             业务模块
 │       │     article / auth / category / tag / comment /
 │       │     gallery / gallery-category / stats / upload
 │       └── prisma/                  schema、迁移、seed
+│   └── wf-bot/                      Warframe QQ 机器人（Koishi + NapCat）
 ├── uploads/                         上传文件（Nginx 直接 alias）
 ├── ecosystem.config.js              PM2 配置
 └── nginx.conf.example               Nginx 反代示例
@@ -115,6 +116,7 @@ Internet ──► Nginx (80/443, TLS) ──┬─► 127.0.0.1:3000   blog-web
 | --- | --- | --- | --- |
 | `blog-web` | 3000 | 127.0.0.1 | Next.js `next start` |
 | `blog-api` | 3001 | 127.0.0.1 | NestJS 编译后产物 |
+| `blog-bot` | 5140 | 127.0.0.1 | Koishi；通过宿主机 3011 连接 NapCat |
 
 > 🔒 两个服务**仅监听回环**，公网入口由 Nginx 收拢，端口 3000/3001 不对外暴露。
 
@@ -148,6 +150,10 @@ ss -tlnp | grep -E ':(3000|3001)'   # 确认服务只监听 127.0.0.1
 | `SITE_URL` | 站点对外 URL（用于 RSS / sitemap） | `https://shichiya.cn` |
 | `HOST` / `PORT` | 后端监听地址与端口 | `127.0.0.1` / `3001` |
 | `API_URL` | 前端 SSR 调用后端的地址 | `http://127.0.0.1:3001` |
+| `ONEBOT_TOKEN` | Koishi 连接 NapCat 的访问令牌 | 与 NapCat 配置保持一致 |
+| `CHROME_PATH` | 机器人图片渲染使用的 Chrome 路径 | `/usr/bin/google-chrome` |
+
+机器人签到、积分、背包和战绩保存在 `packages/wf-bot/data/koishi.db`，部署脚本不会覆盖该目录。
 
 ## 🗃️ 数据模型
 

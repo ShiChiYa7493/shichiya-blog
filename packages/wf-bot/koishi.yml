@@ -1,8 +1,10 @@
 plugins:
   proxy-agent:rsx57u: {}
   http:6alwgh: {}
-  database-memory:tw98ud: null
+  database-sqlite:entertainment:
+    path: data/koishi.db
   server:bqscj8:
+    host: 127.0.0.1
     port: 5140
   console:mu7k9z: null
   sandbox:z1ebfe: null
@@ -20,5 +22,5 @@ plugins:
         - $: guildId
         - - '915943692'
     fuzzy-command:pjuh0j: null
-    entertainment:entertainment: null
+    entertainment:jbg13o: null
     warframe:18nqdk: null

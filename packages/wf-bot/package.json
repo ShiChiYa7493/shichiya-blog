@@ -8,11 +8,14 @@
     "external/*"
   ],
   "scripts": {
-    "start": "koishi start"
+    "start": "node start.js",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present"
   },
   "dependencies": {
     "@koishijs/plugin-console": "^5.30.11",
     "@koishijs/plugin-database-memory": "^3.7.0",
+    "@koishijs/plugin-database-sqlite": "^4.7.0",
     "@koishijs/plugin-http": "^0.6.3",
     "@koishijs/plugin-proxy-agent": "^0.3.3",
     "@koishijs/plugin-sandbox": "^3.4.2",

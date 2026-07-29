@@ -66,4 +66,21 @@ describe('database storage', () => {
     expect(await store.hasLostTo('g1', 'u1', 'u2')).toBe(true)
     expect(await store.hasLostTo('g1', 'u2', 'u1')).toBe(false)
   })
+
+  it('rolls back multi-record economy operations on failure', async () => {
+    const profile = await store.getProfile('g1', 'u1')
+    profile.credits = 50
+    await store.saveProfile(profile)
+
+    await expect(store.withTransaction(async (transaction) => {
+      const current = await transaction.getProfile('g1', 'u1')
+      current.credits = 10
+      await transaction.saveProfile(current)
+      await transaction.addItem('g1', 'u1', 'power-booster', 1)
+      throw new Error('rollback')
+    })).rejects.toThrow('rollback')
+
+    expect((await store.getProfile('g1', 'u1')).credits).toBe(50)
+    expect(await store.getItemQuantity('g1', 'u1', 'power-booster')).toBe(0)
+  })
 })

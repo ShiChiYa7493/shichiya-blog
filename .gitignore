@@ -9,6 +9,8 @@ packages/wf-bot/external/
 # NapCat 的运行数据：ntqq/ 是 QQ 登录态，config/ 含 token，都不能入库
 packages/wf-bot/napcat/ntqq/
 packages/wf-bot/napcat/config/
+# Koishi 持久化数据库、运行缓存和下载的背景图
+packages/wf-bot/data/
 .env
 .env.local
 .env.production
