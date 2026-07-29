@@ -1,4 +1,5 @@
 import { Context, Schema, type Session } from 'koishi'
+import { join } from 'node:path'
 import { getAdventure, pickDailyAdventure, renderAdventure } from './adventures'
 import {
   MAX_DAILY_BATTLES,
@@ -18,6 +19,8 @@ import {
 } from './game'
 import { dateKey, getDailyFortune, hashSeed, renderFortune } from './fortune'
 import { pickRandom, WARFRAMES, WEAPONS } from './items'
+import { BackgroundCache } from './backgrounds'
+import { CardRenderer, type BattleCardData, type CheckinCardData } from './render'
 import { EntertainmentStore, extendModels } from './storage'
 
 export const name = 'entertainment'
@@ -29,6 +32,8 @@ export interface Config {
   inviteTimeoutSeconds: number
   maxMmrGap: number
   maxPowerGapRatio: number
+  renderImages: boolean
+  backgroundCacheDir: string
 }
 
 export const Config: Schema<Config> = Schema.object({
@@ -41,6 +46,9 @@ export const Config: Schema<Config> = Schema.object({
     .description('允许手动挑战的最大 MMR 差距'),
   maxPowerGapRatio: Schema.number().min(0.1).max(1).step(0.05).default(0.3)
     .description('允许手动挑战的最大基础战力差比例'),
+  renderImages: Schema.boolean().default(true).description('签到和对战是否尝试渲染图片'),
+  backgroundCacheDir: Schema.string().default('data/entertainment-backgrounds')
+    .description('Warframe 官方 Public Export 背景图本地缓存目录'),
 })
 
 interface Identity {
@@ -77,6 +85,21 @@ function battleLimitMessage(profile: ProfileState): string | undefined {
 export function apply(ctx: Context, config: Config) {
   extendModels(ctx)
   const store = new EntertainmentStore(ctx)
+  const renderer = new CardRenderer(
+    ctx,
+    new BackgroundCache(join(process.cwd(), config.backgroundCacheDir)),
+  )
+
+  async function renderOrText<T extends CheckinCardData | BattleCardData>(
+    data: T,
+    text: string,
+  ) {
+    if (!config.renderImages) return text
+    const image = 'adventure' in data
+      ? await renderer.checkin(data)
+      : await renderer.battle(data)
+    return image ?? text
+  }
 
   async function createChallenge(identity: Identity, targetId: string, rawStake?: number): Promise<string> {
     if (identity.userId === targetId) return '不能挑战自己。'
@@ -171,8 +194,26 @@ export function apply(ctx: Context, config: Config) {
       const result = applyCheckin(profile, today, randomReward, adventure.id)
       if (result.already) {
         const current = getAdventure(profile.dailyAdventureId)
-        return `今天已经签到过了。\n积分：${profile.credits}｜连签：${profile.streak} 天｜战斗力：${baseCombatPower(profile)}\n`
+        const fortune = getDailyFortune(identity.userId, now, config.timeZone)
+        const text = `今天已经签到过了。\n积分：${profile.credits}｜连签：${profile.streak} 天｜战斗力：${baseCombatPower(profile)}\n`
           + (current ? renderAdventure(current, profile.dailyAdventureUsed) : '')
+        if (!current) return text
+        return renderOrText({
+          userId: identity.userId,
+          date: today,
+          already: true,
+          gained: 0,
+          randomReward: profile.dailyRandom,
+          streak: profile.streak,
+          credits: profile.credits,
+          level: profile.level,
+          battlePower: baseCombatPower(profile),
+          tickets: profile.tickets,
+          adventure: current,
+          adventureUsed: profile.dailyAdventureUsed,
+          fortuneLevel: fortune.level,
+          fortuneText: fortune.text,
+        }, text)
       }
 
       const instant = applyCheckinAdventure(profile, adventure)
@@ -183,13 +224,30 @@ export function apply(ctx: Context, config: Config) {
         instant.tickets ? `额外对战券 +${instant.tickets}` : '',
       ].filter(Boolean).join('，')
 
-      return `签到成功｜${today}\n`
+      const text = `签到成功｜${today}\n`
         + `积分：10 + 随机 ${result.random} + 连签 ${result.streakBonus} = +${result.total}\n`
         + `当前积分：${profile.credits}｜连续签到：${profile.streak} 天｜等级：${profile.level}\n`
         + `对战券：${profile.tickets}｜基础战斗力：${baseCombatPower(profile)}\n`
         + `${renderAdventure(adventure, profile.dailyAdventureUsed)}`
         + (instantParts ? `\n奇遇收益：${instantParts}` : '')
         + (result.levelUp || instant.levelUp ? '\n等级提升了！' : '')
+      const fortune = getDailyFortune(identity.userId, now, config.timeZone)
+      return renderOrText({
+        userId: identity.userId,
+        date: today,
+        already: false,
+        gained: result.total,
+        randomReward: result.random,
+        streak: profile.streak,
+        credits: profile.credits,
+        level: profile.level,
+        battlePower: baseCombatPower(profile),
+        tickets: profile.tickets,
+        adventure,
+        adventureUsed: profile.dailyAdventureUsed,
+        fortuneLevel: fortune.level,
+        fortuneText: fortune.text,
+      }, text)
     })
 
   ctx.command('我的资料', '查看积分、等级、战斗力和战绩')
@@ -343,12 +401,30 @@ export function apply(ctx: Context, config: Config) {
         mmrChange,
       })
 
-      return `对战 #${battle.id} 结算完成\n`
+      const text = `对战 #${battle.id} 结算完成\n`
         + `${formatPowerBreakdown(power, challenger.userId, target.userId)}\n`
         + `${challenger.userId} 胜率：${Math.round(resolution.ownChance * 100)}%｜判定值：${Math.round(resolution.roll * 100)}\n`
         + `胜者：${winner.userId}｜获得奖池 ${payout}${winBonus ? ` + 奇遇 ${winBonus}` : ''} 积分\n`
         + `败者返还：${refund} 积分｜双方额外经验：${cooperationExperience}\n`
         + `MMR：${challenger.userId} ${mmrChange >= 0 ? '+' : ''}${mmrChange}，${target.userId} ${-mmrChange >= 0 ? '+' : ''}${-mmrChange}`
+      return renderOrText({
+        battleId: battle.id,
+        challengerId: challenger.userId,
+        targetId: target.userId,
+        challengerPower: power.own,
+        targetPower: power.opponent,
+        challengerAdventureBonus: power.ownAdventureBonus,
+        targetAdventureBonus: power.opponentAdventureBonus,
+        winnerId: winner.userId,
+        stake: battle.stake,
+        payout,
+        refund,
+        challengerChance: resolution.ownChance,
+        challengerMmrChange: mmrChange,
+        targetMmrChange: -mmrChange,
+        backgroundUserId: challenger.userId,
+        date: today,
+      }, text)
     })
 
   ctx.command('拒绝挑战', '拒绝最新一条未过期的对战邀请')
