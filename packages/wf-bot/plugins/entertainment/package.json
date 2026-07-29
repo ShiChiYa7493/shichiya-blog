@@ -1,8 +1,8 @@
 {
   "name": "koishi-plugin-entertainment",
   "private": true,
-  "version": "0.1.0",
-  "description": "轻量群聊娱乐命令：今日运势与随机 Warframe 推荐",
+  "version": "0.2.0",
+  "description": "群聊娱乐系统：签到、奇遇、积分、对战与 Warframe 推荐",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": ["lib"],
