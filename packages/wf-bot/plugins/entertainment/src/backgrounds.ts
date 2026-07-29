@@ -169,7 +169,14 @@ export const BACKGROUNDS: readonly BackgroundAsset[] = [
 
 const MAX_BACKGROUND_BYTES = 8 * 1024 * 1024
 
-export function pickBackground(userId: string, date: string): BackgroundAsset {
+export function pickBackground(
+  userId: string,
+  date: string,
+  adventureIds: string | readonly string[] = [],
+): BackgroundAsset {
+  const ids = new Set(typeof adventureIds === 'string' ? [adventureIds] : adventureIds)
+  if (ids.has('lotus-gaze')) return BACKGROUNDS.find((asset) => asset.id === 'lotus')!
+  if (ids.has('void-echo')) return BACKGROUNDS.find((asset) => asset.id === 'void-archive')!
   const index = hash(`${userId}:${date}`) % BACKGROUNDS.length
   return BACKGROUNDS[index]
 }

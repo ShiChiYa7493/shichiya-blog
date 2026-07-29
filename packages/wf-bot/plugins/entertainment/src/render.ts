@@ -42,6 +42,10 @@ export interface BattleCardData {
   targetPower: number
   challengerAdventureBonus: number
   targetAdventureBonus: number
+  challengerItemBonus: number
+  targetItemBonus: number
+  challengerAdventureId: string
+  targetAdventureId: string
   winnerId: string
   stake: number
   payout: number
@@ -72,14 +76,17 @@ export class CardRenderer {
   }
 
   async checkin(data: CheckinCardData): Promise<Fragment | undefined> {
-    const background = await this.backgrounds.get(pickBackground(data.userId, data.date))
+    const background = await this.backgrounds.get(pickBackground(data.userId, data.date, data.adventure.id))
     if (!background || !this.ctx.puppeteer) return undefined
     const svg = this.checkinSvg(data, background)
     return this.renderSvg(svg)
   }
 
   async battle(data: BattleCardData): Promise<Fragment | undefined> {
-    const background = await this.backgrounds.get(pickBackground(data.backgroundUserId, data.date))
+    const background = await this.backgrounds.get(pickBackground(data.backgroundUserId, data.date, [
+      data.challengerAdventureId,
+      data.targetAdventureId,
+    ]))
     if (!background || !this.ctx.puppeteer) return undefined
     const svg = this.battleSvg(data, background)
     return this.renderSvg(svg)
@@ -104,10 +111,15 @@ export class CardRenderer {
   }
 
   private checkinSvg(data: CheckinCardData, background: string): string {
-    const adventureStatus = data.adventureUsed ? '今日奇遇已生效' : '首次对战时生效'
+    const adventureStatus = data.adventureUsed
+      ? '今日奇遇已生效'
+      : data.adventure.trigger === 'battle'
+        ? '首次对战时生效'
+        : data.adventure.trigger === 'shop' ? '首次购买时生效' : '签到时生效'
     const title = data.already ? '今日已签到' : '签到成功'
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${this.width}" height="${this.height}" viewBox="0 0 ${this.width} ${this.height}">
       ${this.background(background)}
+      ${this.themeFrame(data.adventure.id)}
       ${this.panel(34, 34, 736, 652, 'rgba(5,11,19,.84)')}
       ${this.text('UID  ' + data.userId, 74, 85, 24, '#d8e8ed', 700)}
       ${this.text(title, 74, 148, 52, data.already ? '#a6b8c0' : '#f5bd42', 800)}
@@ -136,14 +148,18 @@ export class CardRenderer {
   private battleSvg(data: BattleCardData, background: string): string {
     const challengerColor = data.winnerId === data.challengerId ? '#f5bd42' : '#dce9ec'
     const targetColor = data.winnerId === data.targetId ? '#f5bd42' : '#dce9ec'
+    const themeAdventureId = [data.challengerAdventureId, data.targetAdventureId].includes('lotus-gaze')
+      ? 'lotus-gaze'
+      : [data.challengerAdventureId, data.targetAdventureId].includes('void-echo') ? 'void-echo' : ''
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${this.width}" height="${this.height}" viewBox="0 0 ${this.width} ${this.height}">
       ${this.background(background)}
+      ${this.themeFrame(themeAdventureId)}
       ${this.panel(34, 34, 1246, 686, 'rgba(5,11,19,.86)')}
       ${this.text(`对战 #${data.battleId}`, 76, 91, 22, '#a9c6d0', 700)}
       ${this.text('DUEL RESULT', 76, 137, 18, '#9bb3c7', 700)}
       ${this.text(data.winnerId === data.challengerId ? '挑战者胜利' : '目标胜利', 76, 202, 48, '#f5bd42', 800)}
-      ${this.cardUser(data.challengerId, data.challengerPower, data.challengerAdventureBonus, 76, 267, challengerColor)}
-      ${this.cardUser(data.targetId, data.targetPower, data.targetAdventureBonus, 700, 267, targetColor)}
+      ${this.cardUser(data.challengerId, data.challengerPower, data.challengerAdventureBonus, data.challengerItemBonus, 76, 267, challengerColor)}
+      ${this.cardUser(data.targetId, data.targetPower, data.targetAdventureBonus, data.targetItemBonus, 700, 267, targetColor)}
       ${this.text('VS', 614, 385, 42, '#d6a3ff', 800)}
       ${this.line(76, 507, 1190, 507)}
       ${this.badge('积分消耗', `${data.stake} / 人`, 76, 549)}
@@ -154,11 +170,21 @@ export class CardRenderer {
     </svg>`
   }
 
-  private cardUser(userId: string, power: number, bonus: number, x: number, y: number, color: string): string {
+  private cardUser(userId: string, power: number, bonus: number, itemBonus: number, x: number, y: number, color: string): string {
     return `${this.panel(x, y, x + 460, y + 180, 'rgba(17,30,42,.88)')}
       ${this.text(userId, x + 24, y + 51, 25, color, 700)}
       ${this.text(`${power}`, x + 24, y + 119, 52, '#ffffff', 800)}
-      ${this.text(`奇遇 ${bonus >= 0 ? '+' : ''}${bonus}`, x + 190, y + 111, 20, '#a9c6d0', 500)}`
+      ${this.text(`奇遇 ${bonus >= 0 ? '+' : ''}${bonus}｜道具 +${itemBonus}`, x + 190, y + 111, 18, '#a9c6d0', 500)}`
+  }
+
+  private themeFrame(adventureId: string): string {
+    if (adventureId === 'lotus-gaze') {
+      return `<rect x="13" y="13" width="${this.width - 26}" height="${this.height - 26}" rx="24" fill="none" stroke="#d6a3ff" stroke-width="4" opacity=".9"/>`
+    }
+    if (adventureId === 'void-echo') {
+      return `<rect x="13" y="13" width="${this.width - 26}" height="${this.height - 26}" rx="24" fill="none" stroke="#8fe7ef" stroke-width="4" opacity=".9"/>`
+    }
+    return ''
   }
 
   private background(dataUri: string): string {

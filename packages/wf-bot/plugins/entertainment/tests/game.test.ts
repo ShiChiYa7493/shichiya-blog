@@ -45,6 +45,14 @@ describe('check-in game rules', () => {
     expect(profile.credits).toBe(19)
     expect(profile.dailyAdventureUsed).toBe(true)
   })
+
+  it('keeps shop adventures available until the first purchase', () => {
+    const profile = defaultProfile('g1', 'u1')
+    applyCheckin(profile, '2026-07-29', 0, 'lucky-coordinate')
+    const reward = applyCheckinAdventure(profile, getAdventure('lucky-coordinate')!)
+    expect(reward).toEqual({ credits: 0, experience: 0, tickets: 0, levelUp: false })
+    expect(profile.dailyAdventureUsed).toBe(false)
+  })
 })
 
 describe('combat rules', () => {
@@ -73,6 +81,26 @@ describe('combat rules', () => {
     expect(result.ownAdventureBonus).toBe(8)
     expect(result.own).toBe(result.ownBase + 8)
     expect(result.opponent).toBe(result.opponentBase)
+  })
+
+  it('applies conditional adventures and consumable power only when eligible', () => {
+    const own = defaultProfile('g1', 'u1')
+    const opponent = defaultProfile('g1', 'u2')
+    opponent.level = 3
+    own.mmr = 1000
+    opponent.mmr = 1050
+    const result = calculateBattlePower({
+      own,
+      opponent,
+      ownAdventure: getAdventure('steel-path'),
+      opponentAdventure: getAdventure('revenge-mark'),
+      opponentRevenge: true,
+      ownItemPower: 6,
+    })
+    expect(result.ownAdventureBonus).toBe(8)
+    expect(result.opponentAdventureBonus).toBe(8)
+    expect(result.ownItemBonus).toBe(6)
+    expect(result.own).toBe(result.ownBase + 14)
   })
 
   it('caps win probability between 15 and 85 percent', () => {

@@ -19,6 +19,11 @@ describe('official background assets', () => {
     expect(BACKGROUNDS.every((asset) => asset.sourceUrl.startsWith('https://browse.wf/'))).toBe(true)
   })
 
+  it('uses themed art for visual adventures', () => {
+    expect(pickBackground('u1', '2026-07-29', 'lotus-gaze').id).toBe('lotus')
+    expect(pickBackground('u1', '2026-07-29', ['void-echo']).id).toBe('void-archive')
+  })
+
   it('downloads once and serves subsequent reads from local cache', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'entertainment-backgrounds-'))
     directories.push(directory)

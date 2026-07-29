@@ -4,6 +4,7 @@ import { getAdventure, pickDailyAdventure, renderAdventure } from './adventures'
 import {
   MAX_DAILY_BATTLES,
   MAX_STAKE,
+  MAX_TICKETS,
   MIN_STAKE,
   addExperience,
   applyCheckin,
@@ -12,6 +13,7 @@ import {
   calculateBattlePower,
   effectValue,
   formatPowerBreakdown,
+  hasEffect,
   resetDailyBattleCount,
   resolveBattle,
   updateMmr,
@@ -21,6 +23,16 @@ import { dateKey, getDailyFortune, hashSeed, renderFortune } from './fortune'
 import { pickRandom, WARFRAMES, WEAPONS } from './items'
 import { BackgroundCache } from './backgrounds'
 import { CardRenderer, type BattleCardData, type CheckinCardData } from './render'
+import {
+  MAX_DAILY_GIFT_CREDITS,
+  MAX_PURCHASE_QUANTITY,
+  MIN_GIFT_CREDITS,
+  calculateBattlePool,
+  discountedPrice,
+  findShopItem,
+  renderShop,
+  SHOP_ITEMS,
+} from './economy'
 import { EntertainmentStore, extendModels } from './storage'
 
 export const name = 'entertainment'
@@ -75,6 +87,12 @@ function activeAdventure(profile: ProfileState, today: string) {
   if (profile.dailyDate !== today || profile.dailyAdventureUsed) return undefined
   const adventure = getAdventure(profile.dailyAdventureId)
   return adventure?.trigger === 'battle' ? adventure : undefined
+}
+
+function activeShopAdventure(profile: ProfileState, today: string) {
+  if (profile.dailyDate !== today || profile.dailyAdventureUsed) return undefined
+  const adventure = getAdventure(profile.dailyAdventureId)
+  return adventure?.trigger === 'shop' ? adventure : undefined
 }
 
 function battleLimitMessage(profile: ProfileState): string | undefined {
@@ -161,8 +179,13 @@ export function apply(ctx: Context, config: Config) {
       targetAdventureId: '',
       mmrChange: 0,
     })
+    const challengerAdventure = activeAdventure(challenger, today)
+    const scan = challengerAdventure && hasEffect(challengerAdventure.effects, 'scan')
+      ? `\n战术扫描：对方基础战力 ${targetPower}｜MMR ${target.mmr}。`
+      : ''
     return `挑战 #${battle.id} 已发出：${identity.userId} → ${targetId}\n`
       + `双方各消耗 ${stake} 积分，对方请在 ${config.inviteTimeoutSeconds} 秒内发送「接受挑战」。`
+      + scan
   }
 
   ctx.command('今日运势', '查看今天固定的个人运势')
@@ -301,6 +324,8 @@ export function apply(ctx: Context, config: Config) {
       if (own.dailyDate !== today) return '请先签到，再寻找对手。'
       const ownLimit = battleLimitMessage(own)
       if (ownLimit) return ownLimit
+      const ownPower = baseCombatPower(own)
+      const navigationActive = activeAdventure(own, today)?.id === 'star-chart-navigation'
 
       const profiles = await store.listProfiles(identity.guildId)
       const candidates = profiles
@@ -308,7 +333,13 @@ export function apply(ctx: Context, config: Config) {
         .filter((profile) => profile.dailyDate === today && profile.tickets > 0)
         .filter((profile) => profile.credits >= config.defaultStake)
         .filter((profile) => Math.abs(profile.mmr - own.mmr) <= config.maxMmrGap)
-        .sort((left, right) => Math.abs(left.mmr - own.mmr) - Math.abs(right.mmr - own.mmr))
+        .filter((profile) => {
+          const candidatePower = baseCombatPower(profile)
+          return Math.abs(candidatePower - ownPower) / Math.max(candidatePower, ownPower) <= config.maxPowerGapRatio
+        })
+        .sort((left, right) => navigationActive
+          ? Math.abs(baseCombatPower(left) - ownPower) - Math.abs(baseCombatPower(right) - ownPower)
+          : Math.abs(left.mmr - own.mmr) - Math.abs(right.mmr - own.mmr))
 
       for (const candidate of candidates) {
         if (await store.hasRewardedPairBattle(identity.guildId, identity.userId, candidate.userId, today)) continue
@@ -340,35 +371,49 @@ export function apply(ctx: Context, config: Config) {
 
       const challengerAdventure = activeAdventure(challenger, today)
       const targetAdventure = activeAdventure(target, today)
+      const [challengerRevenge, targetRevenge, challengerBoosts, targetBoosts, challengerInsurance, targetInsurance] = await Promise.all([
+        store.hasLostTo(identity.guildId, challenger.userId, target.userId),
+        store.hasLostTo(identity.guildId, target.userId, challenger.userId),
+        store.getItemQuantity(identity.guildId, challenger.userId, 'power-booster'),
+        store.getItemQuantity(identity.guildId, target.userId, 'power-booster'),
+        store.getItemQuantity(identity.guildId, challenger.userId, 'battle-insurance'),
+        store.getItemQuantity(identity.guildId, target.userId, 'battle-insurance'),
+      ])
       const power = calculateBattlePower({
         own: challenger,
         opponent: target,
         ownAdventure: challengerAdventure,
         opponentAdventure: targetAdventure,
+        ownRevenge: challengerRevenge,
+        opponentRevenge: targetRevenge,
+        ownItemPower: challengerBoosts > 0 ? 6 : 0,
+        opponentItemPower: targetBoosts > 0 ? 6 : 0,
       })
       const resolution = resolveBattle(`${battle.id}:${battle.createdAt.getTime()}`, power.own, power.opponent)
       const winner = resolution.winner === 'own' ? challenger : target
       const loser = resolution.winner === 'own' ? target : challenger
       const winnerAdventure = resolution.winner === 'own' ? challengerAdventure : targetAdventure
       const loserAdventure = resolution.winner === 'own' ? targetAdventure : challengerAdventure
+      const loserInsurance = resolution.winner === 'own' ? targetInsurance : challengerInsurance
 
       challenger.credits -= battle.stake
       target.credits -= battle.stake
-      const payout = Math.floor(battle.stake * 2 * 0.8)
       const winBonus = winnerAdventure ? effectValue(winnerAdventure.effects, 'win-bonus') : 0
-      const refundPercent = loserAdventure
-        ? Math.min(50, effectValue(loserAdventure.effects, 'loss-refund'))
+      const adventureRefundPercent = loserAdventure
+        ? effectValue(loserAdventure.effects, 'loss-refund')
         : 0
-      const refund = Math.min(
-        Math.floor(battle.stake * refundPercent / 100),
-        battle.stake * 2 - payout,
-      )
+      const refundPercent = Math.min(50, Math.max(adventureRefundPercent, loserInsurance > 0 ? 30 : 0))
+      const { payout, refund } = calculateBattlePool(battle.stake, refundPercent)
       winner.credits += payout + winBonus
       loser.credits += refund
 
       const cooperationExperience = (challengerAdventure
         ? effectValue(challengerAdventure.effects, 'cooperation-experience') : 0)
         + (targetAdventure ? effectValue(targetAdventure.effects, 'cooperation-experience') : 0)
+        + (challengerAdventure && target.wins + target.losses < 3
+          ? effectValue(challengerAdventure.effects, 'cooperation-experience-if-new') : 0)
+        + (targetAdventure && challenger.wins + challenger.losses < 3
+          ? effectValue(targetAdventure.effects, 'cooperation-experience-if-new') : 0)
       addExperience(winner, 11 + cooperationExperience)
       addExperience(loser, 3 + cooperationExperience)
       winner.wins += 1
@@ -387,7 +432,12 @@ export function apply(ctx: Context, config: Config) {
       const challengerMmrBefore = challenger.mmr
       updateMmr(challenger, target, resolution.winner)
       const mmrChange = challenger.mmr - challengerMmrBefore
-      await Promise.all([store.saveProfile(challenger), store.saveProfile(target)])
+      const itemConsumptions: Promise<boolean>[] = []
+      if (challengerBoosts > 0) itemConsumptions.push(store.consumeItem(identity.guildId, challenger.userId, 'power-booster'))
+      if (targetBoosts > 0) itemConsumptions.push(store.consumeItem(identity.guildId, target.userId, 'power-booster'))
+      const insuranceUsed = loserInsurance > 0 && refundPercent > adventureRefundPercent
+      if (insuranceUsed) itemConsumptions.push(store.consumeItem(identity.guildId, loser.userId, 'battle-insurance'))
+      await Promise.all([store.saveProfile(challenger), store.saveProfile(target), ...itemConsumptions])
       await store.updateBattle(battle.id, {
         status: 'completed',
         completedDate: today,
@@ -405,7 +455,8 @@ export function apply(ctx: Context, config: Config) {
         + `${formatPowerBreakdown(power, challenger.userId, target.userId)}\n`
         + `${challenger.userId} 胜率：${Math.round(resolution.ownChance * 100)}%｜判定值：${Math.round(resolution.roll * 100)}\n`
         + `胜者：${winner.userId}｜获得奖池 ${payout}${winBonus ? ` + 奇遇 ${winBonus}` : ''} 积分\n`
-        + `败者返还：${refund} 积分｜双方额外经验：${cooperationExperience}\n`
+        + `败者返还：${refund} 积分${insuranceUsed ? '（护盾保险生效）' : ''}｜双方额外经验：${cooperationExperience}\n`
+        + (power.ownScans || power.opponentScans ? '扫描数据已记录，可发送「战术复盘」查看。\n' : '')
         + `MMR：${challenger.userId} ${mmrChange >= 0 ? '+' : ''}${mmrChange}，${target.userId} ${-mmrChange >= 0 ? '+' : ''}${-mmrChange}`
       return renderOrText({
         battleId: battle.id,
@@ -415,6 +466,10 @@ export function apply(ctx: Context, config: Config) {
         targetPower: power.opponent,
         challengerAdventureBonus: power.ownAdventureBonus,
         targetAdventureBonus: power.opponentAdventureBonus,
+        challengerItemBonus: power.ownItemBonus,
+        targetItemBonus: power.opponentItemBonus,
+        challengerAdventureId: challengerAdventure?.id ?? '',
+        targetAdventureId: targetAdventure?.id ?? '',
         winnerId: winner.userId,
         stake: battle.stake,
         payout,
@@ -435,6 +490,141 @@ export function apply(ctx: Context, config: Config) {
       if (!battle) return '没有等待你处理的挑战。'
       await store.updateBattle(battle.id, { status: 'rejected' })
       return `已拒绝对战 #${battle.id}。`
+    })
+
+  ctx.command('战术复盘 [battleId:number]', '查看扫描型奇遇记录的详细战报')
+    .alias('对战复盘')
+    .action(async ({ session }, battleId) => {
+      const identity = identify(session)
+      if (typeof identity === 'string') return identity
+      const battle = battleId
+        ? await store.getBattle(identity.guildId, Math.floor(battleId))
+        : (await store.listBattles(identity.guildId, identity.userId))[0]
+      if (!battle || battle.status !== 'completed') return '没有找到可复盘的已完成对战。'
+      if (battle.challengerId !== identity.userId && battle.targetId !== identity.userId) {
+        return '只能查看自己参与的对战。'
+      }
+      const ownAdventureId = battle.challengerId === identity.userId
+        ? battle.challengerAdventureId
+        : battle.targetAdventureId
+      const ownAdventure = getAdventure(ownAdventureId)
+      if (!ownAdventure || !hasEffect(ownAdventure.effects, 'scan')) {
+        return '该场对战没有触发你的扫描型奇遇，无法解锁详细复盘。'
+      }
+      const challengerAdventure = getAdventure(battle.challengerAdventureId)?.title ?? '无'
+      const targetAdventure = getAdventure(battle.targetAdventureId)?.title ?? '无'
+      return `对战 #${battle.id} 战术复盘\n`
+        + `${battle.challengerId}：战斗力 ${battle.challengerPower}｜奇遇 ${challengerAdventure}\n`
+        + `${battle.targetId}：战斗力 ${battle.targetPower}｜奇遇 ${targetAdventure}\n`
+        + `挑战者理论胜率：${Math.round(battle.challengerChance * 100)}%｜判定值：${Math.round(battle.roll * 100)}\n`
+        + `胜者：${battle.winnerId}｜挑战者 MMR 变化：${battle.mmrChange >= 0 ? '+' : ''}${battle.mmrChange}`
+    })
+
+  ctx.command('积分商店', '查看可购买的积分商品')
+    .alias('商店')
+    .action(async ({ session }) => {
+      const identity = identify(session)
+      if (typeof identity === 'string') return identity
+      const today = dateKey(new Date(), config.timeZone)
+      const profile = await store.getProfile(identity.guildId, identity.userId)
+      const adventure = activeShopAdventure(profile, today)
+      const discount = adventure ? effectValue(adventure.effects, 'shop-discount') : 0
+      return `${renderShop(discount)}\n当前积分：${profile.credits}`
+    })
+
+  ctx.command('购买 <item:string> [quantity:number]', '购买积分商店商品')
+    .action(async ({ session }, rawItem, rawQuantity) => {
+      const identity = identify(session)
+      if (typeof identity === 'string') return identity
+      if (!rawItem) return '请使用「购买 商品名 [数量]」。'
+      const item = findShopItem(rawItem)
+      if (!item) return `没有找到「${rawItem}」，请发送「积分商店」查看商品。`
+      const quantity = Math.floor(rawQuantity ?? 1)
+      if (quantity < 1 || quantity > MAX_PURCHASE_QUANTITY) {
+        return `单次购买数量必须在 1～${MAX_PURCHASE_QUANTITY} 之间。`
+      }
+
+      const today = dateKey(new Date(), config.timeZone)
+      const profile = await store.getProfile(identity.guildId, identity.userId)
+      const adventure = activeShopAdventure(profile, today)
+      const discount = adventure ? effectValue(adventure.effects, 'shop-discount') : 0
+      const price = discountedPrice(item, quantity, discount)
+      if (profile.credits < price) return `积分不足，需要 ${price}，当前只有 ${profile.credits}。`
+      if (item.effect.type === 'ticket' && profile.tickets + item.effect.value * quantity > MAX_TICKETS) {
+        return `购买后会超过 ${MAX_TICKETS} 张对战券上限，请减少数量。`
+      }
+
+      profile.credits -= price
+      let result = ''
+      if (item.effect.type === 'experience') {
+        const levelUp = addExperience(profile, item.effect.value * quantity)
+        result = `获得 ${item.effect.value * quantity} 点经验${levelUp ? '，等级提升了' : ''}`
+      } else if (item.effect.type === 'ticket') {
+        profile.tickets += item.effect.value * quantity
+        result = `获得 ${item.effect.value * quantity} 张对战券`
+      } else {
+        const total = await store.addItem(
+          identity.guildId,
+          identity.userId,
+          item.effect.itemId,
+          item.effect.value * quantity,
+        )
+        result = `已放入背包，当前持有 ${total} 个`
+      }
+      if (adventure && discount > 0) profile.dailyAdventureUsed = true
+      await store.saveProfile(profile)
+      return `购买成功：${item.name} ×${quantity}｜消耗 ${price} 积分${discount ? `（奇遇八折）` : ''}\n`
+        + `${result}｜剩余积分 ${profile.credits}`
+    })
+
+  ctx.command('背包', '查看积分商店购买的战斗道具')
+    .alias('我的道具')
+    .action(async ({ session }) => {
+      const identity = identify(session)
+      if (typeof identity === 'string') return identity
+      const inventory = await store.getInventory(identity.guildId, identity.userId)
+      if (!inventory.length) return '背包是空的，可以发送「积分商店」购买道具。'
+      const names = new Map(SHOP_ITEMS.map((item) => [item.id, item.name]))
+      return `我的背包\n${inventory.map((record) =>
+        `${names.get(record.itemId) ?? record.itemId} ×${record.quantity}`).join('\n')}`
+    })
+
+  ctx.command('赠送 <target:string> <amount:number>', '向今日已签到的群友赠送积分')
+    .alias('送积分')
+    .action(async ({ session }, target, rawAmount) => {
+      const identity = identify(session)
+      if (typeof identity === 'string') return identity
+      const targetId = targetFromSession(session, target)
+      if (!targetId) return '请使用「赠送 @群友 10」。'
+      if (targetId === identity.userId) return '不能给自己赠送积分。'
+      const amount = Math.floor(rawAmount ?? 0)
+      if (amount < MIN_GIFT_CREDITS) return `单次至少赠送 ${MIN_GIFT_CREDITS} 积分。`
+
+      const today = dateKey(new Date(), config.timeZone)
+      const sentToday = await store.sentCreditsOnDate(identity.guildId, identity.userId, today)
+      if (sentToday + amount > MAX_DAILY_GIFT_CREDITS) {
+        return `每天最多赠送 ${MAX_DAILY_GIFT_CREDITS} 积分，你今天还可赠送 ${MAX_DAILY_GIFT_CREDITS - sentToday}。`
+      }
+      const [sender, recipient] = await Promise.all([
+        store.getProfile(identity.guildId, identity.userId),
+        store.getProfile(identity.guildId, targetId),
+      ])
+      if (sender.dailyDate !== today) return '请先签到，再赠送积分。'
+      if (recipient.dailyDate !== today) return '对方今天尚未签到，暂时不能接收积分。'
+      if (sender.credits < amount) return `积分不足，当前只有 ${sender.credits}。`
+
+      sender.credits -= amount
+      recipient.credits += amount
+      await Promise.all([store.saveProfile(sender), store.saveProfile(recipient)])
+      await store.createTransfer({
+        guildId: identity.guildId,
+        senderId: identity.userId,
+        targetId,
+        amount,
+        date: today,
+        createdAt: new Date(),
+      })
+      return `赠送成功：${identity.userId} → ${targetId}｜${amount} 积分\n你今天还可赠送 ${MAX_DAILY_GIFT_CREDITS - sentToday - amount} 积分。`
     })
 
   ctx.command('积分排行', '查看本群积分排行榜')
@@ -473,3 +663,4 @@ export {
 } from './game'
 export { dateKey, getDailyFortune, hashSeed, renderFortune } from './fortune'
 export { pickRandom, WARFRAMES, WEAPONS } from './items'
+export { calculateBattlePool, discountedPrice, findShopItem, renderShop, SHOP_ITEMS } from './economy'

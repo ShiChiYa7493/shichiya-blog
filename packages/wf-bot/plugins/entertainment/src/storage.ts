@@ -24,10 +24,29 @@ export interface BattleRecord {
   mmrChange: number
 }
 
+export interface InventoryRecord {
+  guildId: string
+  userId: string
+  itemId: string
+  quantity: number
+}
+
+export interface TransferRecord {
+  id: number
+  guildId: string
+  senderId: string
+  targetId: string
+  amount: number
+  date: string
+  createdAt: Date
+}
+
 declare module 'koishi' {
   interface Tables {
     entertainment_profile: ProfileState
     entertainment_battle: BattleRecord
+    entertainment_inventory: InventoryRecord
+    entertainment_transfer: TransferRecord
   }
 }
 
@@ -73,6 +92,27 @@ export function extendModels(ctx: Context): void {
     challengerAdventureId: 'string(64)',
     targetAdventureId: 'string(64)',
     mmrChange: 'integer',
+  }, {
+    autoInc: true,
+  })
+
+  ctx.model.extend('entertainment_inventory', {
+    guildId: 'string(255)',
+    userId: 'string(255)',
+    itemId: 'string(64)',
+    quantity: 'integer',
+  }, {
+    primary: ['guildId', 'userId', 'itemId'],
+  })
+
+  ctx.model.extend('entertainment_transfer', {
+    id: 'unsigned',
+    guildId: 'string(255)',
+    senderId: 'string(255)',
+    targetId: 'string(255)',
+    amount: 'integer',
+    date: 'string(10)',
+    createdAt: 'timestamp',
   }, {
     autoInc: true,
   })
@@ -150,7 +190,59 @@ export class EntertainmentStore {
   }
 
   async listBattles(guildId: string, userId: string): Promise<BattleRecord[]> {
-    const battles = await this.ctx.database.get('entertainment_battle', { guildId, status: 'completed' })
+    const battles = await this.ctx.database.get('entertainment_battle', {
+      guildId,
+      status: 'completed',
+    }, { sort: { createdAt: 'desc' } })
     return battles.filter((battle) => battle.challengerId === userId || battle.targetId === userId)
+  }
+
+  async getBattle(guildId: string, id: number): Promise<BattleRecord | undefined> {
+    const [battle] = await this.ctx.database.get('entertainment_battle', { guildId, id })
+    return battle
+  }
+
+  async hasLostTo(guildId: string, userId: string, opponentId: string): Promise<boolean> {
+    const battles = await this.listBattles(guildId, userId)
+    return battles.some((battle) =>
+      (battle.challengerId === userId && battle.targetId === opponentId
+        || battle.targetId === userId && battle.challengerId === opponentId)
+      && battle.winnerId === opponentId)
+  }
+
+  async getInventory(guildId: string, userId: string): Promise<InventoryRecord[]> {
+    const records = await this.ctx.database.get('entertainment_inventory', { guildId, userId })
+    return records.filter((record) => record.quantity > 0)
+  }
+
+  async getItemQuantity(guildId: string, userId: string, itemId: string): Promise<number> {
+    const [record] = await this.ctx.database.get('entertainment_inventory', { guildId, userId, itemId })
+    return Math.max(0, record?.quantity ?? 0)
+  }
+
+  async addItem(guildId: string, userId: string, itemId: string, amount: number): Promise<number> {
+    const quantity = Math.max(0, await this.getItemQuantity(guildId, userId, itemId) + Math.floor(amount))
+    await this.ctx.database.upsert('entertainment_inventory', [{ guildId, userId, itemId, quantity }], [
+      'guildId',
+      'userId',
+      'itemId',
+    ])
+    return quantity
+  }
+
+  async consumeItem(guildId: string, userId: string, itemId: string): Promise<boolean> {
+    const quantity = await this.getItemQuantity(guildId, userId, itemId)
+    if (quantity <= 0) return false
+    await this.addItem(guildId, userId, itemId, -1)
+    return true
+  }
+
+  async sentCreditsOnDate(guildId: string, senderId: string, date: string): Promise<number> {
+    const transfers = await this.ctx.database.get('entertainment_transfer', { guildId, senderId, date })
+    return transfers.reduce((sum, transfer) => sum + transfer.amount, 0)
+  }
+
+  async createTransfer(data: Omit<TransferRecord, 'id'>): Promise<TransferRecord> {
+    return this.ctx.database.create('entertainment_transfer', data)
   }
 }

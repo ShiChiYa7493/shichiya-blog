@@ -38,4 +38,32 @@ describe('database storage', () => {
     expect(battle.id).toBeTypeOf('number')
     expect((await store.findPendingForTarget('g1', 'u2', now))?.id).toBe(battle.id)
   })
+
+  it('stores consumable inventory and consumes one item at a time', async () => {
+    expect(await store.addItem('g1', 'u1', 'power-booster', 2)).toBe(2)
+    expect(await store.consumeItem('g1', 'u1', 'power-booster')).toBe(true)
+    expect(await store.getItemQuantity('g1', 'u1', 'power-booster')).toBe(1)
+    expect((await store.getInventory('g1', 'u1'))[0]).toMatchObject({
+      itemId: 'power-booster',
+      quantity: 1,
+    })
+  })
+
+  it('tracks daily gifts and previous losses', async () => {
+    const now = new Date('2026-07-29T00:00:00.000Z')
+    await store.createTransfer({
+      guildId: 'g1', senderId: 'u1', targetId: 'u2', amount: 20,
+      date: '2026-07-29', createdAt: now,
+    })
+    expect(await store.sentCreditsOnDate('g1', 'u1', '2026-07-29')).toBe(20)
+
+    await store.createBattle({
+      guildId: 'g1', challengerId: 'u1', targetId: 'u2', status: 'completed', stake: 10,
+      createdAt: now, expiresAt: now, completedDate: '2026-07-29', challengerPower: 100,
+      targetPower: 100, challengerChance: 0.5, roll: 0.8, winnerId: 'u2',
+      challengerAdventureId: '', targetAdventureId: '', mmrChange: -12,
+    })
+    expect(await store.hasLostTo('g1', 'u1', 'u2')).toBe(true)
+    expect(await store.hasLostTo('g1', 'u2', 'u1')).toBe(false)
+  })
 })

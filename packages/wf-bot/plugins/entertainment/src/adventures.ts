@@ -1,12 +1,15 @@
 import { hashSeed } from './fortune'
 
-export type AdventureTrigger = 'battle' | 'checkin'
+export type AdventureTrigger = 'battle' | 'checkin' | 'shop'
 
 export type AdventureEffect =
   | { type: 'power', value: number }
   | { type: 'power-if-behind', value: number }
   | { type: 'power-if-close', value: number }
   | { type: 'power-if-higher-mmr', value: number }
+  | { type: 'power-if-close-mmr', value: number }
+  | { type: 'power-if-higher-level', value: number }
+  | { type: 'power-if-revenge', value: number }
   | { type: 'opponent-power', value: number }
   | { type: 'initiative', value: number }
   | { type: 'credits', value: number }
@@ -16,6 +19,8 @@ export type AdventureEffect =
   | { type: 'loss-refund', value: number }
   | { type: 'scan' }
   | { type: 'cooperation-experience', value: number }
+  | { type: 'cooperation-experience-if-new', value: number }
+  | { type: 'shop-discount', value: number }
 
 export interface Adventure {
   id: string
@@ -51,16 +56,16 @@ export const ADVENTURES: readonly Adventure[] = [
   { id: 'void-cache', title: '虚空储藏', description: '从裂隙边缘找到储藏箱，立即获得 12 积分。', trigger: 'checkin', weight: 5, effects: [{ type: 'credits', value: 12 }] },
   { id: 'salvage-recovery', title: '残骸回收', description: '本场战斗失败时返还 40% 消耗。', trigger: 'battle', weight: 7, effects: [{ type: 'loss-refund', value: 40 }] },
   { id: 'victory-bounty', title: '胜利赏金', description: '下一场获胜时额外获得 10 积分。', trigger: 'battle', weight: 7, effects: [{ type: 'win-bonus', value: 10 }] },
-  { id: 'battle-insurance', title: '对战保险', description: '本场失败最多损失 5 积分。', trigger: 'battle', weight: 6, effects: [{ type: 'loss-refund', value: 50 }] },
+  { id: 'battle-insurance', title: '对战保险', description: '本场失败时返还 50% 对战消耗。', trigger: 'battle', weight: 6, effects: [{ type: 'loss-refund', value: 50 }] },
   { id: 'training-data', title: '训练数据', description: '整理战斗数据，立即获得 10 点经验。', trigger: 'checkin', weight: 7, effects: [{ type: 'experience', value: 10 }] },
   { id: 'double-training', title: '双倍训练', description: '下一场完成对战时，双方经验奖励额外 +4。', trigger: 'battle', weight: 6, effects: [{ type: 'cooperation-experience', value: 4 }] },
   { id: 'spare-ammunition', title: '备用弹药', description: '获得 1 张额外对战券，仍受每日上限限制。', trigger: 'checkin', weight: 5, effects: [{ type: 'ticket', value: 1 }] },
   { id: 'relay-supply', title: '中继站补给', description: '中继站赠送 5 积分和 1 点经验。', trigger: 'checkin', weight: 8, effects: [{ type: 'credits', value: 5 }, { type: 'experience', value: 1 }] },
   { id: 'cooperative-operation', title: '协同作战', description: '对手接受挑战后，双方各获得额外经验。', trigger: 'battle', weight: 7, effects: [{ type: 'cooperation-experience', value: 2 }] },
-  { id: 'honor-challenge', title: '荣誉挑战', description: '挑战 MMR 接近的对手时，战斗力 +6。', trigger: 'battle', weight: 7, effects: [{ type: 'power-if-close', value: 6 }] },
+  { id: 'honor-challenge', title: '荣誉挑战', description: '挑战 MMR 接近的对手时，战斗力 +6。', trigger: 'battle', weight: 7, effects: [{ type: 'power-if-close-mmr', value: 6 }] },
   { id: 'public-bounty', title: '公开悬赏', description: '本场获胜时额外获得 5 积分。', trigger: 'battle', weight: 7, effects: [{ type: 'win-bonus', value: 5 }] },
-  { id: 'revenge-mark', title: '复仇标记', description: '挑战曾击败自己的对手时，战斗力 +8。', trigger: 'battle', weight: 4, effects: [{ type: 'power', value: 8 }] },
-  { id: 'newbie-mentor', title: '新人导师', description: '与新用户完成对战时，双方各获得额外经验。', trigger: 'battle', weight: 5, effects: [{ type: 'cooperation-experience', value: 3 }] },
+  { id: 'revenge-mark', title: '复仇标记', description: '挑战曾击败自己的对手时，战斗力 +8。', trigger: 'battle', weight: 4, effects: [{ type: 'power-if-revenge', value: 8 }] },
+  { id: 'newbie-mentor', title: '新人导师', description: '与累计对战不足 3 场的新用户对战时，双方额外获得 3 点经验。', trigger: 'battle', weight: 5, effects: [{ type: 'cooperation-experience-if-new', value: 3 }] },
   { id: 'arena-license', title: '竞技许可', description: '获得 1 张额外对战券，仍受每日上限限制。', trigger: 'checkin', weight: 5, effects: [{ type: 'ticket', value: 1 }] },
   { id: 'fair-play', title: '公平协议', description: '挑战战力相近的对手时，失败返还 20% 消耗。', trigger: 'battle', weight: 8, effects: [{ type: 'power-if-close', value: 4 }, { type: 'loss-refund', value: 20 }] },
   { id: 'star-chart-navigation', title: '星图导航', description: '下一次自动匹配会优先寻找战力接近的对手。', trigger: 'battle', weight: 7, effects: [{ type: 'scan' }] },
@@ -68,12 +73,12 @@ export const ADVENTURES: readonly Adventure[] = [
   { id: 'observer-pass', title: '观战凭证', description: '本场战报会生成更完整的战斗力构成。', trigger: 'battle', weight: 5, effects: [{ type: 'scan' }] },
   { id: 'lotus-gaze', title: 'Lotus 的注视', description: '本日签到卡获得特殊边框，战斗力 +4。', trigger: 'battle', weight: 6, effects: [{ type: 'power', value: 4 }] },
   { id: 'void-echo', title: '虚空回响', description: '本日对战卡使用虚空主题，战斗力 +4。', trigger: 'battle', weight: 6, effects: [{ type: 'power', value: 4 }] },
-  { id: 'weapon-resonance', title: '兵器共鸣', description: '随机战甲或武器与今日状态共鸣，战斗力 +7。', trigger: 'battle', weight: 6, effects: [{ type: 'power', value: 7 }] },
+  { id: 'weapon-resonance', title: '兵器共鸣', description: '武器系统与今日状态产生共鸣，本场战斗力 +7。', trigger: 'battle', weight: 6, effects: [{ type: 'power', value: 7 }] },
   { id: 'data-complete', title: '数据完整', description: '战斗结算会展示完整战力构成，额外获得 2 点经验。', trigger: 'battle', weight: 5, effects: [{ type: 'cooperation-experience', value: 2 }, { type: 'scan' }] },
-  { id: 'lucky-coordinate', title: '幸运坐标', description: '积分商店当天随机一个固定商品享受折扣。', trigger: 'checkin', weight: 6, effects: [{ type: 'credits', value: 3 }] },
+  { id: 'lucky-coordinate', title: '幸运坐标', description: '今天首次购买积分商店商品享受八折。', trigger: 'shop', weight: 6, effects: [{ type: 'shop-discount', value: 20 }] },
   { id: 'squad-beacon', title: '战友信标', description: '与同群用户完成对战时，双方各获得额外经验。', trigger: 'battle', weight: 7, effects: [{ type: 'cooperation-experience', value: 2 }] },
   { id: 'battle-replay', title: '战术复盘', description: '对战结算后可以查看一次详细战报。', trigger: 'battle', weight: 5, effects: [{ type: 'scan' }] },
-  { id: 'steel-path', title: '钢铁之路', description: '本场对手等级高于自己时，战斗力 +8。', trigger: 'battle', weight: 5, effects: [{ type: 'power-if-behind', value: 8 }] },
+  { id: 'steel-path', title: '钢铁之路', description: '本场对手等级高于自己时，战斗力 +8。', trigger: 'battle', weight: 5, effects: [{ type: 'power-if-higher-level', value: 8 }] },
   { id: 'relay-honor', title: '中继站荣誉', description: '本场获胜时额外获得 3 积分和 3 点经验。', trigger: 'battle', weight: 6, effects: [{ type: 'win-bonus', value: 3 }, { type: 'cooperation-experience', value: 3 }] },
 ]
 
@@ -95,6 +100,8 @@ export function pickDailyAdventure(userId: string, date: string): Adventure {
 export function renderAdventure(adventure: Adventure, used = false): string {
   const status = used
     ? '（今日奇遇已生效）'
-    : adventure.trigger === 'battle' ? '（首次对战时生效）' : '（签到时生效）'
+    : adventure.trigger === 'battle'
+      ? '（首次对战时生效）'
+      : adventure.trigger === 'shop' ? '（首次购买时生效）' : '（签到时生效）'
   return `【${adventure.title}】${status}\n${adventure.description}`
 }

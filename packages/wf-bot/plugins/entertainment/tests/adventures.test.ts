@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ADVENTURES, getAdventure, pickDailyAdventure } from '../src/adventures'
+import { ADVENTURES, getAdventure, pickDailyAdventure, renderAdventure } from '../src/adventures'
 
 describe('adventure pool', () => {
   it('contains a large unique and implementable pool', () => {
@@ -22,5 +22,9 @@ describe('adventure pool', () => {
       }
     }
     expect(results.size).toBeGreaterThan(20)
+  })
+
+  it('describes deferred shop adventures accurately', () => {
+    expect(renderAdventure(getAdventure('lucky-coordinate')!)).toContain('首次购买时生效')
   })
 })

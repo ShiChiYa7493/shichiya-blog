@@ -42,6 +42,10 @@ export interface BattleContext {
   opponent: ProfileState
   ownAdventure?: Adventure
   opponentAdventure?: Adventure
+  ownRevenge?: boolean
+  opponentRevenge?: boolean
+  ownItemPower?: number
+  opponentItemPower?: number
 }
 
 export interface BattlePowerResult {
@@ -51,6 +55,8 @@ export interface BattlePowerResult {
   opponentBase: number
   ownAdventureBonus: number
   opponentAdventureBonus: number
+  ownItemBonus: number
+  opponentItemBonus: number
   ownScans: boolean
   opponentScans: boolean
 }
@@ -201,19 +207,31 @@ export function calculateBattlePower(context: BattleContext): BattlePowerResult 
   }
   if (context.own.mmr < context.opponent.mmr) ownBonus += effectValue(ownEffects, 'power-if-higher-mmr')
   if (context.opponent.mmr < context.own.mmr) opponentBonus += effectValue(opponentEffects, 'power-if-higher-mmr')
+  if (Math.abs(context.own.mmr - context.opponent.mmr) <= 100) {
+    ownBonus += effectValue(ownEffects, 'power-if-close-mmr')
+    opponentBonus += effectValue(opponentEffects, 'power-if-close-mmr')
+  }
+  if (context.own.level < context.opponent.level) ownBonus += effectValue(ownEffects, 'power-if-higher-level')
+  if (context.opponent.level < context.own.level) opponentBonus += effectValue(opponentEffects, 'power-if-higher-level')
+  if (context.ownRevenge) ownBonus += effectValue(ownEffects, 'power-if-revenge')
+  if (context.opponentRevenge) opponentBonus += effectValue(opponentEffects, 'power-if-revenge')
 
   ownBonus -= effectValue(opponentEffects, 'opponent-power')
   opponentBonus -= effectValue(ownEffects, 'opponent-power')
 
   const ownApplied = Math.min(20, Math.max(-20, ownBonus))
   const opponentApplied = Math.min(20, Math.max(-20, opponentBonus))
+  const ownItemBonus = Math.max(0, Math.min(10, context.ownItemPower ?? 0))
+  const opponentItemBonus = Math.max(0, Math.min(10, context.opponentItemPower ?? 0))
   return {
-    own: Math.max(1, ownBase + ownApplied),
-    opponent: Math.max(1, opponentBase + opponentApplied),
+    own: Math.max(1, ownBase + ownApplied + ownItemBonus),
+    opponent: Math.max(1, opponentBase + opponentApplied + opponentItemBonus),
     ownBase,
     opponentBase,
     ownAdventureBonus: ownApplied,
     opponentAdventureBonus: opponentApplied,
+    ownItemBonus,
+    opponentItemBonus,
     ownScans: hasEffect(ownEffects, 'scan'),
     opponentScans: hasEffect(opponentEffects, 'scan'),
   }
@@ -238,6 +256,6 @@ export function updateMmr(own: ProfileState, opponent: ProfileState, winner: 'ow
 }
 
 export function formatPowerBreakdown(result: BattlePowerResult, ownName: string, opponentName: string): string {
-  return `${ownName}：${result.own}（基础 ${result.ownBase}，奇遇 ${result.ownAdventureBonus >= 0 ? '+' : ''}${result.ownAdventureBonus}）\n`
-    + `${opponentName}：${result.opponent}（基础 ${result.opponentBase}，奇遇 ${result.opponentAdventureBonus >= 0 ? '+' : ''}${result.opponentAdventureBonus}）`
+  return `${ownName}：${result.own}（基础 ${result.ownBase}，奇遇 ${result.ownAdventureBonus >= 0 ? '+' : ''}${result.ownAdventureBonus}，道具 +${result.ownItemBonus}）\n`
+    + `${opponentName}：${result.opponent}（基础 ${result.opponentBase}，奇遇 ${result.opponentAdventureBonus >= 0 ? '+' : ''}${result.opponentAdventureBonus}，道具 +${result.opponentItemBonus}）`
 }
