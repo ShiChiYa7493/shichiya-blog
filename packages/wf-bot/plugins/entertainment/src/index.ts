@@ -36,7 +36,10 @@ import {
 import { EntertainmentStore, extendModels } from './storage'
 
 export const name = 'entertainment'
-export const inject = ['database']
+export const inject = {
+  required: ['database'],
+  optional: ['puppeteer'],
+}
 
 export interface Config {
   timeZone: string
