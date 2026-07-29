@@ -15,6 +15,7 @@
   "dependencies": {
     "@koishijs/plugin-console": "^5.30.11",
     "@koishijs/plugin-database-memory": "^3.7.0",
+    "@koishijs/plugin-database-postgres": "^2.7.0",
     "@koishijs/plugin-database-sqlite": "^4.7.0",
     "@koishijs/plugin-http": "^0.6.3",
     "@koishijs/plugin-proxy-agent": "^0.3.3",
