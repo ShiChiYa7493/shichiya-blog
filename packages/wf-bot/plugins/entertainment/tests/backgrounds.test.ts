@@ -14,7 +14,9 @@ describe('official background assets', () => {
 
   it('selects the same asset for the same user and date', () => {
     expect(pickBackground('u1', '2026-07-29')).toEqual(pickBackground('u1', '2026-07-29'))
-    expect(BACKGROUNDS.length).toBeGreaterThanOrEqual(5)
+    expect(BACKGROUNDS).toHaveLength(25)
+    expect(new Set(BACKGROUNDS.map((asset) => asset.id)).size).toBe(25)
+    expect(BACKGROUNDS.every((asset) => asset.sourceUrl.startsWith('https://browse.wf/'))).toBe(true)
   })
 
   it('downloads once and serves subsequent reads from local cache', async () => {
