@@ -11,6 +11,7 @@
 		"build:server": "npm run build -w packages/server",
 		"build:frontend": "npm run build -w packages/frontend",
 		"build:bot": "npm --prefix packages/wf-bot run build",
+		"deploy:bot": "bash scripts/deploy-wf-bot.sh",
 		"build": "npm run build:server && npm run build:frontend && npm run build:bot",
 		"db:migrate": "npx -w packages/server prisma migrate deploy && npx -w packages/server prisma generate",
 		"deploy": "git pull && npm install && npm --prefix packages/wf-bot install && npm run db:migrate && npm run build && pm2 reload ecosystem.config.js --update-env"

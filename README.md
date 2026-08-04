@@ -43,6 +43,7 @@ shichiya-blog/
 │       └── prisma/                  schema、迁移、seed
 │   └── wf-bot/                      Warframe QQ 机器人（Koishi + NapCat）
 ├── uploads/                         上传文件（Nginx 直接 alias）
+├── docs/warframe-bot.md             Warframe 机器人与插件完整文档
 ├── ecosystem.config.js              PM2 配置
 └── nginx.conf.example               Nginx 反代示例
 ```
@@ -95,11 +96,22 @@ cd ~/shichiya-blog && npm run deploy
 
 `npm run deploy` 等价于：`git pull → npm install → npm run db:migrate → npm run build → pm2 reload --update-env`。
 
+机器人从本地验证并发布时，使用专用命令并提供本次更新内容：
+
+```bash
+npm run deploy:bot -- --notice "订阅提醒支持更多任务类型，并改为每分钟检测"
+```
+
+该命令会依次运行 Warframe 插件全量测试和 Node 22 构建，通过一条复用的 SSH 主连接同步并校验两个线上目录，重启 `blog-bot`，等待服务监听成功、检查新增错误日志，最后通过 OneBot 向 QQ `1071342037` 和白名单群发送更新公告。只有所有公告都收到对应动作回执后，发布命令才会成功退出；可追加 `--dry-run` 仅检查参数和发布目标。私聊接收人可用 `WF_NOTICE_USER_ID` 覆盖，逗号分隔的群列表可用 `WF_NOTICE_GROUP_IDS` 覆盖。
+
+机器人运行、命令、插件、缓存、订阅和故障排查详见 [Warframe QQ 机器人与插件完整文档](./docs/warframe-bot.md)。
+
 ### npm 脚本一览
 
 | 命令 | 何时使用 |
 | --- | --- |
 | `npm run deploy` | 完整发布（代码 + DB + 重启） |
+| `npm run deploy:bot -- --notice "…"` | 验证并发布机器人，成功后自动发送私聊公告 |
 | `npm run db:migrate` | 仅应用 Prisma 迁移并重新生成 client |
 | `npm run build` | 仅构建 server + frontend |
 | `npm run dev:server` / `dev:frontend` | 开发模式 |

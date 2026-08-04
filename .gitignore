@@ -28,8 +28,4 @@ uploads/*
 # docs/ 默认整体忽略（博客草稿等），仅放行设计文档 docs/superpowers/specs/。
 # 注意：必须写成 docs/* 而不是 docs/ —— 父目录若被整体排除，
 # git 不会进入该目录，下面的 ! 例外将全部失效。
-docs/*
-!docs/superpowers/
 docs/superpowers/*
-!docs/superpowers/specs/
-!docs/superpowers/plans/
