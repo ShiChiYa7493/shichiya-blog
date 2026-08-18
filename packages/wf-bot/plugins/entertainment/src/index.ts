@@ -1,4 +1,5 @@
-import { Context, Schema, type Session } from 'koishi'
+import { Context, h, Schema, type Fragment, type Session } from 'koishi'
+import { randomInt } from 'node:crypto'
 import { join } from 'node:path'
 import { getAdventure, pickDailyAdventure, renderAdventure } from './adventures'
 import {
@@ -27,13 +28,15 @@ import {
   MAX_DAILY_GIFT_CREDITS,
   MAX_PURCHASE_QUANTITY,
   MIN_GIFT_CREDITS,
-  calculateBattlePool,
+  calculateChallengePool,
   discountedPrice,
   findShopItem,
   renderShop,
   SHOP_ITEMS,
 } from './economy'
 import { EntertainmentStore, extendModels } from './storage'
+import { ROULETTE_CHAMBERS, playRouletteTurn, type RouletteTurnResult } from './roulette'
+import { GENSHIN_MUTE_DURATION, muteGenshinSpeaker } from './genshin-mute'
 
 export const name = 'entertainment'
 export const inject = {
@@ -46,6 +49,7 @@ export interface Config {
   defaultStake: number
   inviteTimeoutSeconds: number
   maxMmrGap: number
+  /** @deprecated 对战匹配现在只按 MMR 判断，该配置保留用于旧配置兼容。 */
   maxPowerGapRatio: number
   renderImages: boolean
   backgroundCacheDir: string
@@ -60,7 +64,7 @@ export const Config: Schema<Config> = Schema.object({
   maxMmrGap: Schema.number().min(50).max(500).default(200)
     .description('允许手动挑战的最大 MMR 差距'),
   maxPowerGapRatio: Schema.number().min(0.1).max(1).step(0.05).default(0.3)
-    .description('允许手动挑战的最大基础战力差比例'),
+    .description('已废弃：对战不再按基础战力差距拦截'),
   renderImages: Schema.boolean().default(true).description('签到和对战是否尝试渲染图片'),
   backgroundCacheDir: Schema.string().default('data/entertainment-backgrounds')
     .description('Warframe 官方 Public Export 背景图本地缓存目录'),
@@ -98,9 +102,19 @@ function activeShopAdventure(profile: ProfileState, today: string) {
   return adventure?.trigger === 'shop' ? adventure : undefined
 }
 
-function battleLimitMessage(profile: ProfileState): string | undefined {
+function battleLimitMessage(profile: ProfileState, requireTicket = true): string | undefined {
   if (profile.battleCount >= MAX_DAILY_BATTLES) return `你今天已经完成 ${MAX_DAILY_BATTLES} 场对战了。`
-  if (profile.tickets <= 0) return '你没有可用的对战券，请明天签到后再来。'
+  if (requireTicket && profile.tickets <= 0) return '你没有可用的对战券，请明天签到后再来。'
+}
+
+function avatarFromSession(session: Session | undefined, userId: string): string | undefined {
+  const avatar = session?.author?.avatar ?? session?.author?.user?.avatar
+  if (avatar) return avatar
+  return avatarForUser(userId)
+}
+
+function avatarForUser(userId: string): string | undefined {
+  if (/^\d+$/.test(userId)) return `https://q1.qlogo.cn/g?b=qq&nk=${userId}&s=640`
 }
 
 export function apply(ctx: Context, config: Config) {
@@ -111,6 +125,8 @@ export function apply(ctx: Context, config: Config) {
     new BackgroundCache(join(process.cwd(), config.backgroundCacheDir)),
   )
   const battleLocks = new Map<number, Promise<unknown>>()
+  const rouletteLocks = new Map<string, Promise<unknown>>()
+  const logger = ctx.logger('entertainment')
 
   async function withBattleLock<T>(battleId: number, task: () => Promise<T>): Promise<T> {
     const previous = battleLocks.get(battleId) ?? Promise.resolve()
@@ -123,6 +139,49 @@ export function apply(ctx: Context, config: Config) {
     }
   }
 
+  async function withRouletteLock<T>(guildId: string, task: () => Promise<T>): Promise<T> {
+    const previous = rouletteLocks.get(guildId) ?? Promise.resolve()
+    const current = previous.catch(() => undefined).then(task)
+    rouletteLocks.set(guildId, current)
+    try {
+      return await current
+    } finally {
+      if (rouletteLocks.get(guildId) === current) rouletteLocks.delete(guildId)
+    }
+  }
+
+  function rouletteMessage(userId: string, result: RouletteTurnResult): string {
+    const mention = h.at(userId).toString()
+    if (result.status === 'empty') {
+      return `咔哒……空枪。\n\n${mention} 逃过一劫，这是第 ${result.shotNumber}/${ROULETTE_CHAMBERS} 枪。`
+    }
+    if (result.status === 'hit') {
+      return `砰！\n\n${mention} 中弹了，禁言 1 分钟。\n左轮已重新装填。`
+    }
+    return `砰！${mention} 中弹了。\n\n但禁言失败：机器人权限不足，或该成员无法被禁言。\n左轮已重新装填。`
+  }
+
+  ctx.middleware(async (session, next) => {
+    const result = await muteGenshinSpeaker({
+      content: session.content,
+      guildId: session.guildId,
+      userId: session.userId,
+      selfId: session.selfId,
+      mute: () => session.bot.muteGuildMember(
+        session.guildId!,
+        session.userId!,
+        GENSHIN_MUTE_DURATION,
+      ),
+    })
+    if (result.status === 'muted') {
+      await session.send(`${h.at(session.userId!)} 触发关键词，禁言 30 秒。`)
+    } else if (result.status === 'mute-failed') {
+      logger.warn('genshin mute failed for guild=%s user=%s: %s',
+        session.guildId, session.userId, String(result.error))
+    }
+    return next()
+  })
+
   async function renderOrText<T extends CheckinCardData | BattleCardData>(
     data: T,
     text: string,
@@ -134,7 +193,12 @@ export function apply(ctx: Context, config: Config) {
     return image ?? text
   }
 
-  async function createChallenge(identity: Identity, targetId: string, rawStake?: number): Promise<string> {
+  async function createChallenge(
+    identity: Identity,
+    targetId: string,
+    rawStake?: number,
+    forceDirect = false,
+  ): Promise<Fragment> {
     if (identity.userId === targetId) return '不能挑战自己。'
     const today = dateKey(new Date(), config.timeZone)
     const stake = Math.floor(rawStake ?? config.defaultStake)
@@ -153,20 +217,11 @@ export function apply(ctx: Context, config: Config) {
     if (target.dailyDate !== today) return '对方今天尚未签到，暂时不能参与对战。'
     const challengerLimit = battleLimitMessage(challenger)
     if (challengerLimit) return challengerLimit
-    const targetLimit = battleLimitMessage(target)
+    const targetLimit = battleLimitMessage(target, false)
     if (targetLimit) return `对方暂时不能接受挑战：${targetLimit}`
     if (challenger.credits < stake) return `你的积分不足，需要至少 ${stake} 积分。`
-    if (target.credits < stake) return `对方积分不足 ${stake}，无法接受这次挑战。`
-    if (Math.abs(challenger.mmr - target.mmr) > config.maxMmrGap) {
-      return `双方 MMR 差距超过 ${config.maxMmrGap}，请寻找水平更接近的对手。`
-    }
-
-    const challengerPower = baseCombatPower(challenger)
-    const targetPower = baseCombatPower(target)
-    const gapRatio = Math.abs(challengerPower - targetPower) / Math.max(challengerPower, targetPower)
-    if (gapRatio > config.maxPowerGapRatio) {
-      return `双方基础战力差距超过 ${Math.round(config.maxPowerGapRatio * 100)}%，不能发起挑战。`
-    }
+    const targetStake = Math.max(1, Math.floor(stake / 2))
+    if (target.credits < targetStake) return `对方积分不足 ${targetStake}，无法接受这次挑战。`
     if (await store.hasRewardedPairBattle(identity.guildId, identity.userId, targetId, today)) {
       return '你们今天已经完成过一场有效对战，请换一个对手。'
     }
@@ -194,13 +249,167 @@ export function apply(ctx: Context, config: Config) {
       targetAdventureId: '',
       mmrChange: 0,
     })
+    const mmrMatched = Math.abs(challenger.mmr - target.mmr) <= config.maxMmrGap
+    if (forceDirect || mmrMatched) return completeBattle(identity.guildId, battle.id)
+
     const challengerAdventure = activeAdventure(challenger, today)
     const scan = challengerAdventure && hasEffect(challengerAdventure.effects, 'scan')
-      ? `\n战术扫描：对方基础战力 ${targetPower}｜MMR ${target.mmr}。`
+      ? `\n战术扫描：对方基础战力 ${baseCombatPower(target)}｜MMR ${target.mmr}。`
       : ''
     return `挑战 #${battle.id} 已发出：${identity.userId} → ${targetId}\n`
-      + `双方各消耗 ${stake} 积分，对方请在 ${config.inviteTimeoutSeconds} 秒内发送「接受挑战」。`
+      + `双方 MMR 差距超过 ${config.maxMmrGap}，对方请在 ${config.inviteTimeoutSeconds} 秒内发送「接受挑战」。\n`
+      + `接受后发起者消耗 ${stake} 积分，被挑战方消耗 ${targetStake} 积分；仅发起者消耗 1 张对战券。`
       + scan
+  }
+
+  async function completeBattle(guildId: string, battleId: number): Promise<Fragment> {
+    return withBattleLock(battleId, async () => {
+      const battle = await store.getBattle(guildId, battleId)
+      if (!battle || battle.status !== 'pending') return '该挑战已经被处理，请勿重复结算。'
+
+      const today = dateKey(new Date(), config.timeZone)
+      const [challenger, target] = await Promise.all([
+        store.getProfile(guildId, battle.challengerId),
+        store.getProfile(guildId, battle.targetId),
+      ])
+      resetDailyBattleCount(challenger, today)
+      resetDailyBattleCount(target, today)
+      if (challenger.dailyDate !== today || target.dailyDate !== today) return '双方今天都必须先签到。'
+      const challengerLimit = battleLimitMessage(challenger)
+      const targetLimit = battleLimitMessage(target, false)
+      if (challengerLimit) return challengerLimit
+      if (targetLimit) return `对方暂时不能参与对战：${targetLimit}`
+      const targetStake = Math.max(1, Math.floor(battle.stake / 2))
+      if (challenger.credits < battle.stake || target.credits < targetStake) return '有一方积分不足，挑战无法结算。'
+
+      const challengerAdventure = activeAdventure(challenger, today)
+      const targetAdventure = activeAdventure(target, today)
+      const [challengerRevenge, targetRevenge, challengerBoosts, targetBoosts, challengerInsurance, targetInsurance] = await Promise.all([
+        store.hasLostTo(guildId, challenger.userId, target.userId),
+        store.hasLostTo(guildId, target.userId, challenger.userId),
+        store.getItemQuantity(guildId, challenger.userId, 'power-booster'),
+        store.getItemQuantity(guildId, target.userId, 'power-booster'),
+        store.getItemQuantity(guildId, challenger.userId, 'battle-insurance'),
+        store.getItemQuantity(guildId, target.userId, 'battle-insurance'),
+      ])
+      const power = calculateBattlePower({
+        own: challenger,
+        opponent: target,
+        ownAdventure: challengerAdventure,
+        opponentAdventure: targetAdventure,
+        ownRevenge: challengerRevenge,
+        opponentRevenge: targetRevenge,
+        ownItemPower: challengerBoosts > 0 ? 6 : 0,
+        opponentItemPower: targetBoosts > 0 ? 6 : 0,
+      })
+      const resolution = resolveBattle(`${battle.id}:${battle.createdAt.getTime()}`, power.own, power.opponent)
+      const winner = resolution.winner === 'own' ? challenger : target
+      const loser = resolution.winner === 'own' ? target : challenger
+      const winnerAdventure = resolution.winner === 'own' ? challengerAdventure : targetAdventure
+      const loserAdventure = resolution.winner === 'own' ? targetAdventure : challengerAdventure
+      const loserInsurance = resolution.winner === 'own' ? targetInsurance : challengerInsurance
+
+      const targetWon = winner.userId === target.userId
+      const rawWinBonus = winnerAdventure ? effectValue(winnerAdventure.effects, 'win-bonus') : 0
+      const winBonus = targetWon ? Math.floor(rawWinBonus / 2) : rawWinBonus
+      const adventureRefundPercent = loserAdventure
+        ? effectValue(loserAdventure.effects, 'loss-refund')
+        : 0
+      const refundPercent = Math.min(50, Math.max(adventureRefundPercent, loserInsurance > 0 ? 30 : 0))
+      const pool = calculateChallengePool(battle.stake, refundPercent, targetWon)
+      const { challengerStake, payout, refund } = pool
+      challenger.credits -= challengerStake
+      target.credits -= pool.targetStake
+      winner.credits += payout + winBonus
+      loser.credits += refund
+
+      const cooperationExperience = (challengerAdventure
+        ? effectValue(challengerAdventure.effects, 'cooperation-experience') : 0)
+        + (targetAdventure ? effectValue(targetAdventure.effects, 'cooperation-experience') : 0)
+        + (challengerAdventure && target.wins + target.losses < 3
+          ? effectValue(challengerAdventure.effects, 'cooperation-experience-if-new') : 0)
+        + (targetAdventure && challenger.wins + challenger.losses < 3
+          ? effectValue(targetAdventure.effects, 'cooperation-experience-if-new') : 0)
+      const challengerExperience = targetWon
+        ? 3 + cooperationExperience
+        : 11 + cooperationExperience
+      const targetExperience = targetWon
+        ? Math.max(1, Math.floor((11 + cooperationExperience) / 2))
+        : 3 + cooperationExperience
+      addExperience(challenger, challengerExperience)
+      addExperience(target, targetExperience)
+      winner.wins += 1
+      winner.winStreak += 1
+      loser.losses += 1
+      loser.winStreak = 0
+      challenger.tickets -= 1
+      challenger.battleCount += 1
+      target.battleCount += 1
+      challenger.battleDate = today
+      target.battleDate = today
+      if (challengerAdventure) challenger.dailyAdventureUsed = true
+      if (targetAdventure) target.dailyAdventureUsed = true
+
+      const challengerMmrBefore = challenger.mmr
+      updateMmr(challenger, target, resolution.winner)
+      const mmrChange = challenger.mmr - challengerMmrBefore
+      const itemConsumptions: Promise<boolean>[] = []
+      if (challengerBoosts > 0) itemConsumptions.push(store.consumeItem(guildId, challenger.userId, 'power-booster'))
+      if (targetBoosts > 0) itemConsumptions.push(store.consumeItem(guildId, target.userId, 'power-booster'))
+      const insuranceUsed = loserInsurance > 0 && refundPercent > adventureRefundPercent
+      if (insuranceUsed) itemConsumptions.push(store.consumeItem(guildId, loser.userId, 'battle-insurance'))
+      await Promise.all([store.saveProfile(challenger), store.saveProfile(target), ...itemConsumptions])
+      await store.updateBattle(battle.id, {
+        status: 'completed',
+        completedDate: today,
+        challengerPower: power.own,
+        targetPower: power.opponent,
+        challengerChance: resolution.ownChance,
+        roll: resolution.roll,
+        winnerId: winner.userId,
+        challengerAdventureId: challengerAdventure?.id ?? '',
+        targetAdventureId: targetAdventure?.id ?? '',
+        mmrChange,
+      })
+
+      const text = `对战 #${battle.id} 结算完成\n`
+        + `${formatPowerBreakdown(power, challenger.userId, target.userId)}\n`
+        + `${challenger.userId} 胜率：${Math.round(resolution.ownChance * 100)}%｜判定值：${Math.round(resolution.roll * 100)}\n`
+        + `积分消耗：${challenger.userId} ${challengerStake}｜${target.userId} ${pool.targetStake}\n`
+        + `胜者：${winner.userId}｜获得 ${payout}${winBonus ? ` + 奇遇 ${winBonus}` : ''} 积分\n`
+        + `败者返还：${refund} 积分${insuranceUsed ? '（护盾保险生效）' : ''}\n`
+        + `经验：${challenger.userId} +${challengerExperience}｜${target.userId} +${targetExperience}\n`
+        + `对战券：仅发起者 ${challenger.userId} 消耗 1 张\n`
+        + (power.ownScans || power.opponentScans ? '扫描数据已记录，可发送「战术复盘」查看。\n' : '')
+        + `MMR：${challenger.userId} ${mmrChange >= 0 ? '+' : ''}${mmrChange}，${target.userId} ${-mmrChange >= 0 ? '+' : ''}${-mmrChange}`
+      return renderOrText({
+        battleId: battle.id,
+        challengerId: challenger.userId,
+        targetId: target.userId,
+        challengerAvatarUrl: avatarForUser(challenger.userId),
+        targetAvatarUrl: avatarForUser(target.userId),
+        challengerPower: power.own,
+        targetPower: power.opponent,
+        challengerAdventureBonus: power.ownAdventureBonus,
+        targetAdventureBonus: power.opponentAdventureBonus,
+        challengerItemBonus: power.ownItemBonus,
+        targetItemBonus: power.opponentItemBonus,
+        challengerAdventureId: challengerAdventure?.id ?? '',
+        targetAdventureId: targetAdventure?.id ?? '',
+        winnerId: winner.userId,
+        challengerStake,
+        targetStake: pool.targetStake,
+        payout,
+        refund,
+        challengerExperience,
+        targetExperience,
+        challengerChance: resolution.ownChance,
+        challengerMmrChange: mmrChange,
+        targetMmrChange: -mmrChange,
+        backgroundUserId: challenger.userId,
+        date: today,
+      }, text)
+    })
   }
 
   ctx.command('今日运势', '查看今天固定的个人运势')
@@ -220,6 +429,29 @@ export function apply(ctx: Context, config: Config) {
     .alias('随机枪', '随机装备')
     .action(() => `今日武器推荐：${pickRandom(WEAPONS)}`)
 
+  ctx.command('射爆', '进行一轮俄罗斯轮盘')
+    .action(async ({ session }) => {
+      if (!session || session.stripped.content.slice((session.stripped.prefix ?? '').length).trim() !== '射爆') {
+        return
+      }
+      if (!session.guildId) return '“射爆”仅限群聊使用。'
+      if (!session.userId) return '无法识别你的用户账号。'
+
+      return withRouletteLock(session.guildId, async () => {
+        const result = await playRouletteTurn({
+          store,
+          guildId: session.guildId!,
+          randomChamber: () => randomInt(ROULETTE_CHAMBERS),
+          mute: () => session.bot.muteGuildMember(session.guildId!, session.userId!, 60_000),
+        })
+        if (result.status === 'mute-failed') {
+          logger.warn('roulette mute failed for guild=%s user=%s: %s',
+            session.guildId, session.userId, String(result.muteError))
+        }
+        return rouletteMessage(session.userId!, result)
+      })
+    })
+
   ctx.command('签到', '每日签到，获得积分、经验、对战券和今日奇遇')
     .action(async ({ session }) => {
       const identity = identify(session)
@@ -238,6 +470,7 @@ export function apply(ctx: Context, config: Config) {
         if (!current) return text
         return renderOrText({
           userId: identity.userId,
+          avatarUrl: avatarFromSession(session, identity.userId),
           date: today,
           already: true,
           gained: 0,
@@ -250,7 +483,10 @@ export function apply(ctx: Context, config: Config) {
           adventure: current,
           adventureUsed: profile.dailyAdventureUsed,
           fortuneLevel: fortune.level,
+          fortuneScore: fortune.score,
           fortuneText: fortune.text,
+          fortuneAxes: fortune.axes,
+          fortuneAdvice: fortune.advice,
         }, text)
       }
 
@@ -272,6 +508,7 @@ export function apply(ctx: Context, config: Config) {
       const fortune = getDailyFortune(identity.userId, now, config.timeZone)
       return renderOrText({
         userId: identity.userId,
+        avatarUrl: avatarFromSession(session, identity.userId),
         date: today,
         already: false,
         gained: result.total,
@@ -284,7 +521,10 @@ export function apply(ctx: Context, config: Config) {
         adventure,
         adventureUsed: profile.dailyAdventureUsed,
         fortuneLevel: fortune.level,
+        fortuneScore: fortune.score,
         fortuneText: fortune.text,
+        fortuneAxes: fortune.axes,
+        fortuneAdvice: fortune.advice,
       }, text)
     })
 
@@ -319,186 +559,56 @@ export function apply(ctx: Context, config: Config) {
       return adventure ? renderAdventure(adventure, profile.dailyAdventureUsed) : '今日奇遇数据异常。'
     })
 
-  ctx.command('挑战 <target:string> [stake:number]', '向指定群友发起积分对战')
+  async function randomMatch(identity: Identity): Promise<Fragment> {
+    const today = dateKey(new Date(), config.timeZone)
+    const own = await store.getProfile(identity.guildId, identity.userId)
+    resetDailyBattleCount(own, today)
+    if (own.dailyDate !== today) return '请先签到，再寻找对手。'
+    const ownLimit = battleLimitMessage(own)
+    if (ownLimit) return ownLimit
+    const ownPower = baseCombatPower(own)
+    const navigationActive = activeAdventure(own, today)?.id === 'star-chart-navigation'
+
+    const profiles = await store.listProfiles(identity.guildId)
+    const candidates = profiles
+      .filter((profile) => profile.userId !== identity.userId)
+      .filter((profile) => profile.dailyDate === today)
+      .filter((profile) => profile.battleDate !== today || profile.battleCount < MAX_DAILY_BATTLES)
+      .filter((profile) => profile.credits >= config.defaultStake)
+      .filter((profile) => Math.abs(profile.mmr - own.mmr) <= config.maxMmrGap)
+    const available = []
+    for (const candidate of candidates) {
+      if (!await store.hasRewardedPairBattle(identity.guildId, identity.userId, candidate.userId, today)) {
+        available.push(candidate)
+      }
+    }
+    if (!available.length) return '暂时没有符合条件的对手，请稍后再试。'
+    if (navigationActive) {
+      available.sort((left, right) =>
+        Math.abs(baseCombatPower(left) - ownPower) - Math.abs(baseCombatPower(right) - ownPower))
+    }
+    const pool = navigationActive ? available.slice(0, Math.min(3, available.length)) : available
+    const candidate = pool[randomInt(pool.length)]
+    return createChallenge(identity, candidate.userId, config.defaultStake, true)
+  }
+
+  ctx.command('对战 [target:string] [stake:number]', '随机匹配或向指定群友发起对战')
+    .alias('挑战', '匹配对战', '自动匹配')
     .action(async ({ session }, target, stake) => {
       const identity = identify(session)
       if (typeof identity === 'string') return identity
       const targetId = targetFromSession(session, target)
-      if (!targetId) return '请使用「挑战 @群友 10」发起挑战。'
-      return createChallenge(identity, targetId, stake)
-    })
-
-  ctx.command('匹配对战', '寻找 MMR 和战力接近的群友')
-    .alias('自动匹配')
-    .action(async ({ session }) => {
-      const identity = identify(session)
-      if (typeof identity === 'string') return identity
-      const today = dateKey(new Date(), config.timeZone)
-      const own = await store.getProfile(identity.guildId, identity.userId)
-      resetDailyBattleCount(own, today)
-      if (own.dailyDate !== today) return '请先签到，再寻找对手。'
-      const ownLimit = battleLimitMessage(own)
-      if (ownLimit) return ownLimit
-      const ownPower = baseCombatPower(own)
-      const navigationActive = activeAdventure(own, today)?.id === 'star-chart-navigation'
-
-      const profiles = await store.listProfiles(identity.guildId)
-      const candidates = profiles
-        .filter((profile) => profile.userId !== identity.userId)
-        .filter((profile) => profile.dailyDate === today && profile.tickets > 0)
-        .filter((profile) => profile.credits >= config.defaultStake)
-        .filter((profile) => Math.abs(profile.mmr - own.mmr) <= config.maxMmrGap)
-        .filter((profile) => {
-          const candidatePower = baseCombatPower(profile)
-          return Math.abs(candidatePower - ownPower) / Math.max(candidatePower, ownPower) <= config.maxPowerGapRatio
-        })
-        .sort((left, right) => navigationActive
-          ? Math.abs(baseCombatPower(left) - ownPower) - Math.abs(baseCombatPower(right) - ownPower)
-          : Math.abs(left.mmr - own.mmr) - Math.abs(right.mmr - own.mmr))
-
-      for (const candidate of candidates) {
-        if (await store.hasRewardedPairBattle(identity.guildId, identity.userId, candidate.userId, today)) continue
-        return createChallenge(identity, candidate.userId, config.defaultStake)
-      }
-      return '暂时没有符合条件的对手，请稍后再试或手动挑战。'
+      if (targetId) return createChallenge(identity, targetId, stake)
+      return randomMatch(identity)
     })
 
   ctx.command('接受挑战', '接受最新一条未过期的对战邀请')
     .action(async ({ session }) => {
       const identity = identify(session)
       if (typeof identity === 'string') return identity
-      const now = new Date()
-      const today = dateKey(now, config.timeZone)
-      const pendingBattle = await store.findPendingForTarget(identity.guildId, identity.userId, now)
+      const pendingBattle = await store.findPendingForTarget(identity.guildId, identity.userId, new Date())
       if (!pendingBattle) return '没有等待你接受的挑战。'
-      return withBattleLock(pendingBattle.id, async () => {
-        const battle = await store.getBattle(identity.guildId, pendingBattle.id)
-        if (!battle || battle.status !== 'pending') return '该挑战已经被处理，请勿重复接受。'
-
-        const [challenger, target] = await Promise.all([
-          store.getProfile(identity.guildId, battle.challengerId),
-          store.getProfile(identity.guildId, battle.targetId),
-        ])
-        resetDailyBattleCount(challenger, today)
-        resetDailyBattleCount(target, today)
-        if (challenger.dailyDate !== today || target.dailyDate !== today) return '双方今天都必须先签到。'
-        const challengerLimit = battleLimitMessage(challenger)
-        const targetLimit = battleLimitMessage(target)
-        if (challengerLimit || targetLimit) return challengerLimit || targetLimit
-        if (challenger.credits < battle.stake || target.credits < battle.stake) return '有一方积分不足，挑战无法结算。'
-
-        const challengerAdventure = activeAdventure(challenger, today)
-        const targetAdventure = activeAdventure(target, today)
-        const [challengerRevenge, targetRevenge, challengerBoosts, targetBoosts, challengerInsurance, targetInsurance] = await Promise.all([
-          store.hasLostTo(identity.guildId, challenger.userId, target.userId),
-          store.hasLostTo(identity.guildId, target.userId, challenger.userId),
-          store.getItemQuantity(identity.guildId, challenger.userId, 'power-booster'),
-          store.getItemQuantity(identity.guildId, target.userId, 'power-booster'),
-          store.getItemQuantity(identity.guildId, challenger.userId, 'battle-insurance'),
-          store.getItemQuantity(identity.guildId, target.userId, 'battle-insurance'),
-        ])
-        const power = calculateBattlePower({
-          own: challenger,
-          opponent: target,
-          ownAdventure: challengerAdventure,
-          opponentAdventure: targetAdventure,
-          ownRevenge: challengerRevenge,
-          opponentRevenge: targetRevenge,
-          ownItemPower: challengerBoosts > 0 ? 6 : 0,
-          opponentItemPower: targetBoosts > 0 ? 6 : 0,
-        })
-        const resolution = resolveBattle(`${battle.id}:${battle.createdAt.getTime()}`, power.own, power.opponent)
-        const winner = resolution.winner === 'own' ? challenger : target
-        const loser = resolution.winner === 'own' ? target : challenger
-        const winnerAdventure = resolution.winner === 'own' ? challengerAdventure : targetAdventure
-        const loserAdventure = resolution.winner === 'own' ? targetAdventure : challengerAdventure
-        const loserInsurance = resolution.winner === 'own' ? targetInsurance : challengerInsurance
-
-        challenger.credits -= battle.stake
-        target.credits -= battle.stake
-        const winBonus = winnerAdventure ? effectValue(winnerAdventure.effects, 'win-bonus') : 0
-        const adventureRefundPercent = loserAdventure
-          ? effectValue(loserAdventure.effects, 'loss-refund')
-          : 0
-        const refundPercent = Math.min(50, Math.max(adventureRefundPercent, loserInsurance > 0 ? 30 : 0))
-        const { payout, refund } = calculateBattlePool(battle.stake, refundPercent)
-        winner.credits += payout + winBonus
-        loser.credits += refund
-
-        const cooperationExperience = (challengerAdventure
-          ? effectValue(challengerAdventure.effects, 'cooperation-experience') : 0)
-          + (targetAdventure ? effectValue(targetAdventure.effects, 'cooperation-experience') : 0)
-          + (challengerAdventure && target.wins + target.losses < 3
-            ? effectValue(challengerAdventure.effects, 'cooperation-experience-if-new') : 0)
-          + (targetAdventure && challenger.wins + challenger.losses < 3
-            ? effectValue(targetAdventure.effects, 'cooperation-experience-if-new') : 0)
-        addExperience(winner, 11 + cooperationExperience)
-        addExperience(loser, 3 + cooperationExperience)
-        winner.wins += 1
-        winner.winStreak += 1
-        loser.losses += 1
-        loser.winStreak = 0
-        challenger.tickets -= 1
-        target.tickets -= 1
-        challenger.battleCount += 1
-        target.battleCount += 1
-        challenger.battleDate = today
-        target.battleDate = today
-        if (challengerAdventure) challenger.dailyAdventureUsed = true
-        if (targetAdventure) target.dailyAdventureUsed = true
-
-        const challengerMmrBefore = challenger.mmr
-        updateMmr(challenger, target, resolution.winner)
-        const mmrChange = challenger.mmr - challengerMmrBefore
-        const itemConsumptions: Promise<boolean>[] = []
-        if (challengerBoosts > 0) itemConsumptions.push(store.consumeItem(identity.guildId, challenger.userId, 'power-booster'))
-        if (targetBoosts > 0) itemConsumptions.push(store.consumeItem(identity.guildId, target.userId, 'power-booster'))
-        const insuranceUsed = loserInsurance > 0 && refundPercent > adventureRefundPercent
-        if (insuranceUsed) itemConsumptions.push(store.consumeItem(identity.guildId, loser.userId, 'battle-insurance'))
-        await Promise.all([store.saveProfile(challenger), store.saveProfile(target), ...itemConsumptions])
-        await store.updateBattle(battle.id, {
-          status: 'completed',
-          completedDate: today,
-          challengerPower: power.own,
-          targetPower: power.opponent,
-          challengerChance: resolution.ownChance,
-          roll: resolution.roll,
-          winnerId: winner.userId,
-          challengerAdventureId: challengerAdventure?.id ?? '',
-          targetAdventureId: targetAdventure?.id ?? '',
-          mmrChange,
-        })
-
-        const text = `对战 #${battle.id} 结算完成\n`
-          + `${formatPowerBreakdown(power, challenger.userId, target.userId)}\n`
-          + `${challenger.userId} 胜率：${Math.round(resolution.ownChance * 100)}%｜判定值：${Math.round(resolution.roll * 100)}\n`
-          + `胜者：${winner.userId}｜获得奖池 ${payout}${winBonus ? ` + 奇遇 ${winBonus}` : ''} 积分\n`
-          + `败者返还：${refund} 积分${insuranceUsed ? '（护盾保险生效）' : ''}｜双方额外经验：${cooperationExperience}\n`
-          + (power.ownScans || power.opponentScans ? '扫描数据已记录，可发送「战术复盘」查看。\n' : '')
-          + `MMR：${challenger.userId} ${mmrChange >= 0 ? '+' : ''}${mmrChange}，${target.userId} ${-mmrChange >= 0 ? '+' : ''}${-mmrChange}`
-        return renderOrText({
-          battleId: battle.id,
-          challengerId: challenger.userId,
-          targetId: target.userId,
-          challengerPower: power.own,
-          targetPower: power.opponent,
-          challengerAdventureBonus: power.ownAdventureBonus,
-          targetAdventureBonus: power.opponentAdventureBonus,
-          challengerItemBonus: power.ownItemBonus,
-          targetItemBonus: power.opponentItemBonus,
-          challengerAdventureId: challengerAdventure?.id ?? '',
-          targetAdventureId: targetAdventure?.id ?? '',
-          winnerId: winner.userId,
-          stake: battle.stake,
-          payout,
-          refund,
-          challengerChance: resolution.ownChance,
-          challengerMmrChange: mmrChange,
-          targetMmrChange: -mmrChange,
-          backgroundUserId: challenger.userId,
-          date: today,
-        }, text)
-      })
+      return completeBattle(identity.guildId, pendingBattle.id)
     })
 
   ctx.command('拒绝挑战', '拒绝最新一条未过期的对战邀请')
@@ -684,6 +794,24 @@ export {
   resolveBattle,
   winChance,
 } from './game'
-export { dateKey, getDailyFortune, hashSeed, renderFortune } from './fortune'
+export { dateKey, FORTUNE_AXES, getDailyFortune, hashSeed, renderFortune } from './fortune'
 export { pickRandom, WARFRAMES, WEAPONS } from './items'
-export { calculateBattlePool, discountedPrice, findShopItem, renderShop, SHOP_ITEMS } from './economy'
+export {
+  calculateBattlePool,
+  calculateChallengePool,
+  discountedPrice,
+  findShopItem,
+  renderShop,
+  SHOP_ITEMS,
+} from './economy'
+export {
+  ROULETTE_CHAMBERS,
+  createRouletteState,
+  playRouletteTurn,
+  pullRouletteTrigger,
+} from './roulette'
+export {
+  GENSHIN_MUTE_DURATION,
+  GENSHIN_MUTE_KEYWORD,
+  muteGenshinSpeaker,
+} from './genshin-mute'

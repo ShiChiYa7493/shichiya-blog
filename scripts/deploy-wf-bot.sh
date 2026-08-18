@@ -5,14 +5,20 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PACKAGE_DIR="$REPO_ROOT/packages/wf-bot/external/warframe"
+ENTERTAINMENT_PACKAGE_DIR="$REPO_ROOT/packages/wf-bot/plugins/entertainment"
+FUZZY_PACKAGE_DIR="$REPO_ROOT/packages/wf-bot/plugins/fuzzy-command"
 REMOTE_HOST="${WF_REMOTE_HOST:-tencent}"
 REMOTE_PRIMARY="${WF_REMOTE_PRIMARY:-/root/shichiya-bot-release/packages/wf-bot/external/warframe}"
 REMOTE_MIRROR="${WF_REMOTE_MIRROR:-/root/shichiya-blog/packages/wf-bot/external/warframe}"
 REMOTE_BOT_ROOT="${WF_REMOTE_BOT_ROOT:-/root/shichiya-bot-release/packages/wf-bot}"
 REMOTE_MIRROR_BOT_ROOT="${WF_REMOTE_MIRROR_BOT_ROOT:-/root/shichiya-blog/packages/wf-bot}"
-NOTICE_USER_ID="${WF_NOTICE_USER_ID:-1071342037}"
-NOTICE_GROUP_IDS="${WF_NOTICE_GROUP_IDS:-915943692}"
+REMOTE_ENTERTAINMENT_PRIMARY="$REMOTE_BOT_ROOT/plugins/entertainment"
+REMOTE_ENTERTAINMENT_MIRROR="$REMOTE_MIRROR_BOT_ROOT/plugins/entertainment"
+REMOTE_FUZZY_PRIMARY="$REMOTE_BOT_ROOT/plugins/fuzzy-command"
+REMOTE_FUZZY_MIRROR="$REMOTE_MIRROR_BOT_ROOT/plugins/fuzzy-command"
+NOTICE_USER_ID='1071342037'
 NOTICE=''
+SKIP_NOTICE=false
 DRY_RUN=false
 SSH_CONTROL_DIR=''
 SSH_CONTROL_PATH="${WF_SSH_CONTROL_PATH:-}"
@@ -23,9 +29,11 @@ usage() {
 用法：
   npm run deploy:bot -- --notice "本次更新内容"
   scripts/deploy-wf-bot.sh --notice "本次更新内容" [--dry-run]
+  scripts/deploy-wf-bot.sh --skip-notice
 
 参数：
-  --notice TEXT  发布成功后向私聊和白名单群发送的更新公告（必填）
+  --notice TEXT  发布成功后向 QQ 1071342037 私聊发送更新公告（默认必填）
+  --skip-notice  发布成功后跳过公告发送
   --dry-run      仅检查参数并展示发布目标，不构建、不写远端、不发消息
 
 环境变量：
@@ -44,6 +52,10 @@ while (($#)); do
       DRY_RUN=true
       shift
       ;;
+    --skip-notice)
+      SKIP_NOTICE=true
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -56,23 +68,40 @@ while (($#)); do
   esac
 done
 
-[[ -n "${NOTICE//[[:space:]]/}" ]] || {
+if ! $SKIP_NOTICE && [[ -z "${NOTICE//[[:space:]]/}" ]]; then
   echo '错误：必须用 --notice 提供本次更新内容' >&2
   exit 2
-}
+fi
 # CI、npm 与程序化调用常把多行参数写成字面量 `\n`；公告统一恢复为真实换行。
 NOTICE="${NOTICE//\\n/$'\n'}"
 [[ -f "$PACKAGE_DIR/package.json" ]] || {
   echo "错误：找不到 Warframe 插件目录：$PACKAGE_DIR" >&2
   exit 2
 }
+[[ -f "$ENTERTAINMENT_PACKAGE_DIR/package.json" ]] || {
+  echo "错误：找不到娱乐插件目录：$ENTERTAINMENT_PACKAGE_DIR" >&2
+  exit 2
+}
+[[ -f "$FUZZY_PACKAGE_DIR/package.json" ]] || {
+  echo "错误：找不到模糊命令插件目录：$FUZZY_PACKAGE_DIR" >&2
+  exit 2
+}
 
 echo "发布源：$PACKAGE_DIR"
+echo "娱乐插件源：$ENTERTAINMENT_PACKAGE_DIR"
+echo "模糊命令插件源：$FUZZY_PACKAGE_DIR"
 echo "线上目录：$REMOTE_PRIMARY"
 echo "镜像目录：$REMOTE_MIRROR"
+echo "娱乐插件线上目录：$REMOTE_ENTERTAINMENT_PRIMARY"
+echo "娱乐插件镜像目录：$REMOTE_ENTERTAINMENT_MIRROR"
+echo "模糊命令插件线上目录：$REMOTE_FUZZY_PRIMARY"
+echo "模糊命令插件镜像目录：$REMOTE_FUZZY_MIRROR"
 echo "机器人启动文件：$REMOTE_BOT_ROOT/start.js"
-echo "公告接收人：QQ $NOTICE_USER_ID"
-echo "公告群：$NOTICE_GROUP_IDS"
+if $SKIP_NOTICE; then
+  echo '公告：跳过发送'
+else
+  echo "公告接收人：QQ $NOTICE_USER_ID"
+fi
 
 if $DRY_RUN; then
   echo 'dry-run 完成：未构建、未连接服务器、未发送公告。'
@@ -126,10 +155,17 @@ fi
 
 echo '1/6 运行全量测试'
 (cd "$PACKAGE_DIR" && yarn test)
+(cd "$ENTERTAINMENT_PACKAGE_DIR" && npm test)
+(cd "$FUZZY_PACKAGE_DIR" && npm test)
 
-echo '2/6 构建 Warframe 插件'
+echo '2/6 构建 Warframe、娱乐与模糊命令插件'
 (cd "$PACKAGE_DIR" && yarn build)
+(cd "$ENTERTAINMENT_PACKAGE_DIR" && npm run build)
+(cd "$FUZZY_PACKAGE_DIR" && npm run build)
 LOCAL_SHA="$(shasum -a 256 "$PACKAGE_DIR/lib/index.js" | awk '{print $1}')"
+LOCAL_ENTERTAINMENT_SHA="$(shasum -a 256 "$ENTERTAINMENT_PACKAGE_DIR/lib/index.js" | awk '{print $1}')"
+LOCAL_ROULETTE_SHA="$(shasum -a 256 "$ENTERTAINMENT_PACKAGE_DIR/lib/roulette.js" | awk '{print $1}')"
+LOCAL_FUZZY_SHA="$(shasum -a 256 "$FUZZY_PACKAGE_DIR/lib/index.js" | awk '{print $1}')"
 LOCAL_START_SHA="$(shasum -a 256 "$REPO_ROOT/packages/wf-bot/start.js" | awk '{print $1}')"
 FONT_RELATIVE_PATHS=(
   'assets/fonts/georgia/Georgia.TTF'
@@ -139,11 +175,25 @@ FONT_RELATIVE_PATHS=(
 )
 
 echo '3/6 同步两个线上目录'
+ssh "${SSH_OPTIONS[@]}" "$REMOTE_HOST" \
+  "sudo mkdir -p '$REMOTE_ENTERTAINMENT_PRIMARY/lib' '$REMOTE_ENTERTAINMENT_MIRROR/lib' '$REMOTE_FUZZY_PRIMARY/lib' '$REMOTE_FUZZY_MIRROR/lib'"
 for remote_dir in "$REMOTE_PRIMARY" "$REMOTE_MIRROR"; do
   rsync -az --checksum \
     -e "$SSH_RSH" \
     --rsync-path='sudo rsync' \
     "$PACKAGE_DIR/lib/" "$REMOTE_HOST:$remote_dir/lib/"
+done
+for remote_dir in "$REMOTE_ENTERTAINMENT_PRIMARY" "$REMOTE_ENTERTAINMENT_MIRROR"; do
+  rsync -az --checksum \
+    -e "$SSH_RSH" \
+    --rsync-path='sudo rsync' \
+    "$ENTERTAINMENT_PACKAGE_DIR/lib/" "$REMOTE_HOST:$remote_dir/lib/"
+done
+for remote_dir in "$REMOTE_FUZZY_PRIMARY" "$REMOTE_FUZZY_MIRROR"; do
+  rsync -az --checksum \
+    -e "$SSH_RSH" \
+    --rsync-path='sudo rsync' \
+    "$FUZZY_PACKAGE_DIR/lib/" "$REMOTE_HOST:$remote_dir/lib/"
 done
 for remote_bot_root in "$REMOTE_BOT_ROOT" "$REMOTE_MIRROR_BOT_ROOT"; do
   rsync -az --checksum \
@@ -151,13 +201,34 @@ for remote_bot_root in "$REMOTE_BOT_ROOT" "$REMOTE_MIRROR_BOT_ROOT"; do
     --rsync-path='sudo rsync' \
     "$REPO_ROOT/packages/wf-bot/start.js" "$REMOTE_HOST:$remote_bot_root/start.js"
 done
-
 echo '4/6 校验线上 bundle'
 for remote_dir in "$REMOTE_PRIMARY" "$REMOTE_MIRROR"; do
   remote_sha="$(ssh "${SSH_OPTIONS[@]}" "$REMOTE_HOST" \
     "sudo shasum -a 256 '$remote_dir/lib/index.js' | awk '{print \$1}'")"
   if [[ "$remote_sha" != "$LOCAL_SHA" ]]; then
     echo "错误：$remote_dir 校验失败，本地 $LOCAL_SHA，远端 $remote_sha" >&2
+    exit 1
+  fi
+done
+for remote_dir in "$REMOTE_ENTERTAINMENT_PRIMARY" "$REMOTE_ENTERTAINMENT_MIRROR"; do
+  read -r remote_entertainment_sha remote_roulette_sha < <(
+    ssh "${SSH_OPTIONS[@]}" "$REMOTE_HOST" \
+      "printf '%s %s\\n' \"\$(sudo shasum -a 256 '$remote_dir/lib/index.js' | awk '{print \$1}')\" \"\$(sudo shasum -a 256 '$remote_dir/lib/roulette.js' | awk '{print \$1}')\""
+  )
+  if [[ "$remote_entertainment_sha" != "$LOCAL_ENTERTAINMENT_SHA" ]]; then
+    echo "错误：$remote_dir/index.js 校验失败" >&2
+    exit 1
+  fi
+  if [[ "$remote_roulette_sha" != "$LOCAL_ROULETTE_SHA" ]]; then
+    echo "错误：$remote_dir/roulette.js 校验失败" >&2
+    exit 1
+  fi
+done
+for remote_dir in "$REMOTE_FUZZY_PRIMARY" "$REMOTE_FUZZY_MIRROR"; do
+  remote_fuzzy_sha="$(ssh "${SSH_OPTIONS[@]}" "$REMOTE_HOST" \
+    "sudo shasum -a 256 '$remote_dir/lib/index.js' | awk '{print \$1}'")"
+  if [[ "$remote_fuzzy_sha" != "$LOCAL_FUZZY_SHA" ]]; then
+    echo "错误：$remote_dir/index.js 校验失败" >&2
     exit 1
   fi
 done
@@ -181,6 +252,9 @@ for remote_bot_root in "$REMOTE_BOT_ROOT" "$REMOTE_MIRROR_BOT_ROOT"; do
   fi
 done
 echo "bundle SHA256：$LOCAL_SHA"
+echo "entertainment SHA256：$LOCAL_ENTERTAINMENT_SHA"
+echo "roulette SHA256：$LOCAL_ROULETTE_SHA"
+echo "fuzzy-command SHA256：$LOCAL_FUZZY_SHA"
 echo "start.js SHA256：$LOCAL_START_SHA"
 echo 'Georgia 字体 SHA256：两套线上目录均校验通过'
 
@@ -194,16 +268,18 @@ restart_result="$(ssh "${SSH_OPTIONS[@]}" "$REMOTE_HOST" "
   before=\$(sudo pm2 pid blog-bot)
   sudo pm2 restart blog-bot >/dev/null
   ready=''
-  for _ in \$(seq 1 30); do
+  for _ in \$(seq 1 180); do
     if sudo pm2 show blog-bot | grep -q 'status .*online' \
       && sudo tail -n +$((OUT_LINES + 1)) /root/.pm2/logs/blog-bot-out.log | grep -q 'server listening at' \
-      && sudo tail -n +$((OUT_LINES + 1)) /root/.pm2/logs/blog-bot-out.log | grep -q 'Warframe 插件已加载，命令注册完成'; then
+      && sudo tail -n +$((OUT_LINES + 1)) /root/.pm2/logs/blog-bot-out.log | grep -q 'Warframe 插件已加载，命令注册完成' \
+      && sudo tail -n +$((OUT_LINES + 1)) /root/.pm2/logs/blog-bot-out.log | grep -q 'Public Export 每日检查' \
+      && sudo tail -n +$((OUT_LINES + 1)) /root/.pm2/logs/blog-bot-out.log | grep -q 'WFM 元数据'; then
       ready=yes
       break
     fi
     sleep 1
   done
-  [ \"\$ready\" = yes ] || { echo '机器人 30 秒内未完成服务监听和 Warframe 命令注册' >&2; exit 1; }
+  [ \"\$ready\" = yes ] || { echo '机器人 180 秒内未完成服务监听、命令注册和每日数据检查' >&2; exit 1; }
   after=\$(sudo pm2 pid blog-bot)
   [ -n \"\$after\" ] && [ \"\$after\" != 0 ] || { echo '机器人 PID 无效' >&2; exit 1; }
   printf 'pid %s -> %s, status=online' \"\$before\" \"\$after\"
@@ -218,16 +294,20 @@ if [[ -n "${new_errors//[[:space:]]/}" ]]; then
   exit 1
 fi
 
-echo '6/6 自动发送更新公告'
-PUBLISHED_AT="$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
-NOTICE_TEXT="【机器人更新公告】
+if $SKIP_NOTICE; then
+  echo '6/6 跳过更新公告'
+  echo '发布完成：线上校验和进程就绪检查均已通过，未发送公告。'
+else
+  echo '6/6 自动发送更新公告'
+  PUBLISHED_AT="$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')"
+  NOTICE_TEXT="【机器人更新公告】
 ${NOTICE}
 
 发布时间：${PUBLISHED_AT}
 版本：${LOCAL_SHA:0:12}"
-NOTICE_B64="$(printf '%s' "$NOTICE_TEXT" | base64 | tr -d '\n')"
-ssh "${SSH_OPTIONS[@]}" "$REMOTE_HOST" \
-  "sudo env DEPLOY_NOTICE_B64='$NOTICE_B64' ONEBOT_USER_ID='$NOTICE_USER_ID' ONEBOT_GROUP_IDS='$NOTICE_GROUP_IDS' ONEBOT_ENV_FILE='$REMOTE_BOT_ROOT/.env' ONEBOT_WS_MODULE='$REMOTE_BOT_ROOT/node_modules/ws' /opt/node22/bin/node -" \
-  < "$SCRIPT_DIR/send-onebot-private-message.cjs"
-
-echo '发布完成：线上校验、进程就绪检查、私聊及群公告回执均已通过。'
+  NOTICE_B64="$(printf '%s' "$NOTICE_TEXT" | base64 | tr -d '\n')"
+  ssh "${SSH_OPTIONS[@]}" "$REMOTE_HOST" \
+    "sudo env DEPLOY_NOTICE_B64='$NOTICE_B64' ONEBOT_ENV_FILE='$REMOTE_BOT_ROOT/.env' ONEBOT_WS_MODULE='$REMOTE_BOT_ROOT/node_modules/ws' /opt/node22/bin/node -" \
+    < "$SCRIPT_DIR/send-onebot-private-message.cjs"
+  echo "发布完成：线上校验、进程就绪检查、QQ $NOTICE_USER_ID 私聊公告回执均已通过。"
+fi

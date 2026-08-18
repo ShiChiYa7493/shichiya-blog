@@ -27,6 +27,17 @@ describe('database storage', () => {
     expect((await store.getProfile('g2', 'u1')).credits).toBe(0)
   })
 
+  it('persists independent roulette state for each group', async () => {
+    const updatedAt = new Date('2026-08-05T00:00:00.000Z')
+    await store.saveRouletteState({
+      guildId: 'g1', bulletChamber: 4, nextChamber: 2, updatedAt,
+    })
+    expect(await store.getRouletteState('g1')).toMatchObject({
+      guildId: 'g1', bulletChamber: 4, nextChamber: 2,
+    })
+    expect(await store.getRouletteState('g2')).toBeUndefined()
+  })
+
   it('creates and retrieves pending challenges', async () => {
     const now = new Date('2026-07-29T00:00:00.000Z')
     const battle = await store.createBattle({

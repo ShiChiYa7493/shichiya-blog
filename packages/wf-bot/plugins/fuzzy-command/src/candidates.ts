@@ -1,4 +1,4 @@
-import type { Context } from 'koishi'
+import type { Context, Session } from 'koishi'
 import { normalize } from './normalize'
 
 export interface Candidate {
@@ -16,13 +16,16 @@ export interface Candidate {
  * `ctx.$commander._commandList` 是已注册命令数组，
  * `cmd._aliases` 的键即别名（中文别名也在其中）。
  */
-export function collectCandidates(ctx: Context): Candidate[] {
+export function collectCandidates(ctx: Context, session?: Session): Candidate[] {
   const seen = new Set<string>()
   const out: Candidate[] = []
 
   for (const cmd of ctx.$commander._commandList) {
+    if (session && !cmd.match(session)) continue
     const names = new Set<string>([cmd.name, ...Object.keys(cmd._aliases ?? {})])
     for (const canonical of names) {
+      const alias = cmd._aliases?.[canonical]
+      if (session && alias && !(session.resolve(alias.filter) ?? true)) continue
       const normalized = normalize(canonical)
       if (!normalized || seen.has(normalized)) continue
       seen.add(normalized)

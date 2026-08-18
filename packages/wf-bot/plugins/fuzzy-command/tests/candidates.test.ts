@@ -40,4 +40,29 @@ describe('collectCandidates', () => {
     } as any
     expect(collectCandidates(ctx).filter((c) => c.normalized === '裂缝')).toHaveLength(1)
   })
+
+  it('按当前会话排除不可用的私聊维护命令', () => {
+    const ctx = {
+      $commander: {
+        _commandList: [
+          {
+            name: 'wmu',
+            _aliases: { wmu: {} },
+            match: (session: any) => session.isDirect && session.userId === '1071342037',
+          },
+          {
+            name: 'wmi',
+            _aliases: { wmi: {}, '查价': {} },
+            match: () => true,
+          },
+        ],
+      },
+    } as any
+
+    const group = { isDirect: false, userId: '1071342037', resolve: () => undefined } as any
+    const ownerPrivate = { isDirect: true, userId: '1071342037', resolve: () => undefined } as any
+
+    expect(collectCandidates(ctx, group).map(c => c.canonical)).not.toContain('wmu')
+    expect(collectCandidates(ctx, ownerPrivate).map(c => c.canonical)).toContain('wmu')
+  })
 })

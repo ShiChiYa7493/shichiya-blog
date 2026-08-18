@@ -1,6 +1,7 @@
 import type { Context } from 'koishi'
 import type { ProfileState } from './game'
 import { defaultProfile } from './game'
+import type { RouletteState } from './roulette'
 
 export type BattleStatus = 'pending' | 'accepted' | 'rejected' | 'expired' | 'completed'
 
@@ -47,6 +48,7 @@ declare module 'koishi' {
     entertainment_battle: BattleRecord
     entertainment_inventory: InventoryRecord
     entertainment_transfer: TransferRecord
+    entertainment_roulette: RouletteState
   }
 }
 
@@ -115,6 +117,15 @@ export function extendModels(ctx: Context): void {
     createdAt: 'timestamp',
   }, {
     autoInc: true,
+  })
+
+  ctx.model.extend('entertainment_roulette', {
+    guildId: 'string(255)',
+    bulletChamber: 'integer',
+    nextChamber: 'integer',
+    updatedAt: 'timestamp',
+  }, {
+    primary: 'guildId',
   })
 }
 
@@ -252,5 +263,14 @@ export class EntertainmentStore {
 
   async createTransfer(data: Omit<TransferRecord, 'id'>): Promise<TransferRecord> {
     return this.ctx.database.create('entertainment_transfer', data)
+  }
+
+  async getRouletteState(guildId: string): Promise<RouletteState | undefined> {
+    const [state] = await this.ctx.database.get('entertainment_roulette', { guildId })
+    return state
+  }
+
+  async saveRouletteState(state: RouletteState): Promise<void> {
+    await this.ctx.database.upsert('entertainment_roulette', [{ ...state }], ['guildId'])
   }
 }

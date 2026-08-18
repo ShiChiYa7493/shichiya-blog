@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { calculateBattlePool, discountedPrice, findShopItem, renderShop, SHOP_ITEMS } from '../src/economy'
+import {
+  calculateBattlePool,
+  calculateChallengePool,
+  discountedPrice,
+  findShopItem,
+  renderShop,
+  SHOP_ITEMS,
+} from '../src/economy'
 
 describe('credit shop', () => {
   it('resolves product names and aliases', () => {
@@ -26,5 +33,15 @@ describe('credit shop', () => {
     const protectedPool = calculateBattlePool(5, 50)
     expect(protectedPool.payout).toBeGreaterThan(5)
     expect(protectedPool.payout + protectedPool.refund + protectedPool.fee).toBe(10)
+  })
+
+  it('halves the challenged users stake and winning payout', () => {
+    expect(calculateChallengePool(10, 0, false)).toEqual({
+      challengerStake: 10, targetStake: 5, payout: 12, refund: 0, fee: 3,
+    })
+    expect(calculateChallengePool(10, 0, true)).toEqual({
+      challengerStake: 10, targetStake: 5, payout: 6, refund: 0, fee: 9,
+    })
+    expect(calculateChallengePool(5, 0, false).targetStake).toBe(2)
   })
 })

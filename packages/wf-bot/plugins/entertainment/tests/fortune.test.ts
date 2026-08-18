@@ -5,7 +5,11 @@ describe('daily fortune', () => {
   const noon = new Date('2026-07-29T04:00:00.000Z')
 
   it('is stable for the same user and local date', () => {
-    expect(getDailyFortune('u-1', noon)).toEqual(getDailyFortune('u-1', new Date('2026-07-29T14:00:00.000Z')))
+    const first = getDailyFortune('u-1', noon)
+    expect(first).toEqual(getDailyFortune('u-1', new Date('2026-07-29T14:00:00.000Z')))
+    expect(first.axes).toHaveLength(6)
+    expect(first.axes.map((axis) => axis.label)).toEqual(['紫卡', '交易', '掉落', '核桃', '赏金', '生息'])
+    expect(first.axes.every((axis) => axis.value >= 0 && axis.value <= 100)).toBe(true)
   })
 
   it('changes with user or date', () => {

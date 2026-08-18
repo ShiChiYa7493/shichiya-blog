@@ -69,8 +69,6 @@ QQ <-> NapCat(OneBot 11 WebSocket) <-> Koishi(wf-bot) <-> 插件
 | `CHROME_PATH` | Puppeteer 使用的 Chrome 路径 | `/usr/bin/google-chrome` |
 | `WF_CACHE_DIR` | Warframe 插件持久缓存根目录 | `.cache/koishi-warframe` |
 | `WF_IMAGE_CACHE_DIR` | 图片缓存目录 | `${WF_CACHE_DIR}/images` |
-| `WF_NOTICE_USER_ID` | 发布公告私聊 QQ | `1071342037` |
-| `WF_NOTICE_GROUP_IDS` | 发布公告群列表，逗号分隔 | `915943692` |
 | `WF_REMOTE_HOST` | 机器人发布 SSH 主机别名 | `tencent` |
 | `WF_SSH_CONTROL_PATH` | 可选；复用调用方已建立的 SSH ControlMaster | `/tmp/.../control` |
 | `WF_REMOTE_PRIMARY` | 线上主插件目录 | `/root/shichiya-bot-release/packages/wf-bot/external/warframe` |
@@ -160,6 +158,7 @@ NAPCAT_QUICK_PASSWORD=
 - 1999 / 六人组赏金
 - 双衍王境
 - 入侵
+- Darvo 每日特惠，可订阅全部特惠或指定商品
 
 订阅条件支持自然写法和常见缩写，例如：
 
@@ -168,7 +167,12 @@ NAPCAT_QUICK_PASSWORD=
 蹲 1999 五歼+保险箱
 蹲 中虚歼
 蹲 扎里曼 7天
+蹲 每日特惠
+蹲 每日特惠 西伯利亚冰锤
+蹲 每日特惠 冰矿锤
 ```
+
+普通群员的新订阅和续订后剩余有效期最多为 7 天。群主、管理员及推送授权白名单成员可以创建永久有效的订阅。
 
 ### 4.2 市场行情
 
@@ -219,6 +223,7 @@ NAPCAT_QUICK_PASSWORD=
 | Darvo 特惠 | `daily-deal` / `每日特惠` / `特惠` / `达尔沃特惠` |
 | 钢铁侵袭 | `steel-incursion` / `侵袭` / `钢铁侵袭` / `钢铁精华` |
 | 限时活动 | `event` / `活动` / `限时活动` |
+| 活动兑换 | `event-shop` / `活动兑换` / `娜卡商店` / `娜卡兑换` |
 | 官方新闻 | `news` / `新闻` / `官方新闻` |
 | 热修日志 | `hotfix` / `热修` / `更新日志` / `热修日志` |
 
@@ -240,14 +245,30 @@ NAPCAT_QUICK_PASSWORD=
 | 功能 | 命令 / 别名 | 说明 |
 | --- | --- | --- |
 | 1999 日历 | `calendar` / `日历` / `1999日历` | 当前 1999 日历状态 |
-| 周常总览 | `weekly` / `周常` | 执行官、深层科研、时光科研总览 |
+| 周报 / 周常总览 | `weekly` / `周常` / `周报` | 默认汇总全部自然周内容；可按板块筛选 |
 | 执行官猎杀 | `archon-hunt` / `执行官` | 单独查看本周执行官 |
 | 深层科研 | `deep-archimedea` / `深层科研` / `科研` | 单独查看本周深层科研 |
 | 时光科研 | `temporal-archimedea` / `时光科研` | 单独查看本周时光科研 |
 | 钢铁兑换 | `steel-exchange` / `钢铁兑换` | Teshin 本周轮换商品 |
 | 回廊 | `circuit` / `灵化之源` / `灵化` / `回廊` | 当前周回廊奖励；加 `全部` 看整轮 |
-| 午夜电波 | `nightwave` / `午夜电波` / `电波` / `夜波` | 当前挑战 |
+| 午夜电波 | `nightwave` / `午夜电波` / `电波` / `夜波` | Cred 可兑换奖励摘要、当前赛季等级奖励、周常/精英周常任务 |
 | Prime 复兴 | `resurgence` / `重生` / `复兴` / `阿耶` | 复兴轮换 |
+
+自然周统一按 Warframe 的 UTC 周重置计算，即北京时间每周一 `08:00`：
+
+| 数据 | 更新时间 | 周报处理 |
+| --- | --- | --- |
+| 执行官猎杀 | 周一 00:00 UTC / 08:00 北京时间 | 默认包含 |
+| 深层科研 | 周一 00:00 UTC / 08:00 北京时间 | 默认包含 |
+| 时光科研 | 周一 00:00 UTC / 08:00 北京时间 | 默认包含 |
+| Teshin 钢铁兑换 | 周一 00:00 UTC / 08:00 北京时间 | 默认包含 |
+| 回廊战甲与灵化奖励 | 周一 00:00 UTC / 08:00 北京时间 | 默认包含 |
+| 午夜电波每周 / 精英挑战 | 周一 00:00 UTC / 08:00 北京时间 | 默认包含；每日挑战不纳入 |
+| 每周紫卡行情归档 | 第三方按 ISO 周发布，无固定到点 SLA | 不纳入自动周报 |
+
+`周常` 默认生成 1120px 宽的全量周报；可发送 `周常 钢铁 回廊 电波` 等组合只看指定板块。机器人每分钟检查一次自然周周期键，新周开始后会主动刷新世界状态并预生成默认周报。图片消息持久化到 `${WF_CACHE_DIR}/weekly-reports`，到下周一 08:00 强制失效；这等价于最多缓存 7 天，同时避免周日首次生成后跨周继续返回旧图。筛选组合首次查询时生成一次，之后复用同一周期缓存。
+
+1999 日历、Prime 复兴、午夜电波每日挑战以及每日钢铁侵袭各自有非周粒度的轮换，不应按 7 天缓存。
 
 ### 4.6 资料查询
 
@@ -255,6 +276,7 @@ NAPCAT_QUICK_PASSWORD=
 | --- | --- | --- |
 | 遗物查询 | `relic` / `遗物` / `核桃` | `遗物 后纪 A1` |
 | 遗物反查 | `relic` / `遗物` / `核桃` | `遗物 绝路 Prime 枪管` |
+| 战甲总览 | `warframes` / `战甲` / `战甲列表` | `战甲` |
 | 掉落查询 | `drop` / `掉落` | `掉落 内融核心` |
 | Wiki 查询 | `wiki` / `百科` / `wk` | `wk 夜灵水力使` |
 | 命令搜索 | `command-search` / `命令搜索` / `搜命令` / `找命令` | `命令搜索 裂缝` |
@@ -265,14 +287,14 @@ NAPCAT_QUICK_PASSWORD=
 - 出库中
 - 重生中
 
-Wiki 默认使用灰机 Warframe Wiki：`https://warframe.huijiwiki.com/wiki`。
+Wiki 使用本地中英文字典和社区别名直接生成灰机 Warframe Wiki 词条链接，不请求 Wiki API。
 
 ### 4.7 紫卡与武器
 
 | 功能 | 命令 / 别名 | 示例 |
 | --- | --- | --- |
-| 紫卡截图识别 | `riven` / `紫卡识别` | 发送紫卡截图并附带 `紫卡识别` |
-| 文字紫卡分析 | `riven-text` / `紫卡分析` / `文字紫卡` | `紫卡分析 托里德 | 暴击率 187.2 | 暴击伤害 146.8 | 多重射击 112.5` |
+| 紫卡识别 / 分析 | `riven` / `紫卡识别` | 可附带紫卡截图，也可直接输入武器、词条和数值 |
+| 紫卡分析 / 识别 | `riven-text` / `紫卡分析` / `文字紫卡` | 同样兼容截图和文字：`紫卡分析 托里德 | 暴击率 187.2 | 暴击伤害 146.8 | 多重射击 112.5` |
 | 紫卡数值范围 | `riven-stat` / `rivenstat` / `紫卡数值` | `riven-stat 步枪 31 0.7` |
 | 武器倾向 | `riven-disposition` / `倾向` / `武器倾向` | `倾向 托里德` |
 | 配卡建议 | `weapon-advice` / `配卡建议` / `武器建议` / `配卡思路` | `配卡建议 托里德 克隆尼` |
@@ -282,6 +304,8 @@ Wiki 默认使用灰机 Warframe Wiki：`https://warframe.huijiwiki.com/wiki`。
 
 - 火山方舟多模态模型：默认优先。
 - 腾讯云 OCR：可作为兜底。
+
+`紫卡识别` 与 `紫卡分析` 两组命令输入能力相同：检测到图片时先识图，只有文字时解析文字；随后统一执行结构化校验、紫卡数值分析、WM 同词条报价和结果图渲染。
 
 紫卡分析中的 WM 市场报价是增强信息。WM 异常、无挂单或词条过冷时，只是不显示市场参考，不影响基础分析结果。
 
@@ -304,14 +328,14 @@ Wiki 默认使用灰机 Warframe Wiki：`https://warframe.huijiwiki.com/wiki`。
 
 | 功能 | 命令 / 别名 | 说明 |
 | --- | --- | --- |
-| 今日运势 | `今日运势` / `运势` | 按用户和日期固定生成 |
+| 今日运势 | `今日运势` / `运势` | 按用户和日期固定生成；签到卡展示紫卡、交易、掉落、核桃、赏金、生息六维雷达图 |
 | 随机战甲 | `随机战甲` / `随机甲` | 随机推荐 Warframe |
 | 随机武器 | `随机武器` / `随机枪` / `随机装备` | 随机推荐武器 |
 | 签到 | `签到` | 每日积分、经验、对战券、今日奇遇 |
 | 我的资料 | `我的资料` / `积分` / `战斗力` / `战力` | 查看积分、等级、战斗力、战绩 |
 | 今日奇遇 | `今日奇遇` / `奇遇` | 查看当日奇遇及生效条件 |
-| 挑战 | `挑战 <target> [stake]` | 向群友发起积分对战 |
-| 匹配对战 | `匹配对战` / `自动匹配` | 自动寻找 MMR/战力接近的群友 |
+| 对战 | `对战` / `匹配对战` / `自动匹配` | 随机匹配 MMR 接近的群友并直接结算 |
+| 指定对战 | `对战 <target> [stake]` / `挑战 <target> [stake]` | MMR 匹配时直接结算，否则等待对方接受 |
 | 接受挑战 | `接受挑战` | 接受最新未过期对战邀请 |
 | 拒绝挑战 | `拒绝挑战` | 拒绝最新未过期对战邀请 |
 | 战术复盘 | `战术复盘 [battleId]` / `对战复盘` | 查看可复盘战报 |
@@ -321,6 +345,8 @@ Wiki 默认使用灰机 Warframe Wiki：`https://warframe.huijiwiki.com/wiki`。
 | 赠送积分 | `赠送 <target> <amount>` / `送积分` | 向今日已签到群友赠送积分 |
 | 积分排行 | `积分排行` / `排行榜` | 本群积分排行 |
 | 对战排行 | `对战排行` | 本群 MMR 排行 |
+
+对战结算中仅发起方消耗对战券并支付完整积分，被挑战方支付一半积分；被挑战方获胜时，积分奖励、胜利奇遇积分和胜利经验均减半。
 
 娱乐数据表：
 
@@ -429,10 +455,11 @@ Warframe 插件共用 `globalImageCache`：
 | 数据源 | 用途 | 失败策略 |
 | --- | --- | --- |
 | Warframe Worldstate | 裂缝、赏金、周期、活动等 | 查询失败返回明确错误；订阅记录失败状态 |
-| `warframe-worldstate-data` / Public Export | 本地化、星图、任务、掉落、武器数据 | 随包发布 |
+| `warframe-worldstate-data` / Public Export | 本地化、星图、任务、掉落、武器数据 | 随包快照；启动及每日 04:15 检查上游提交，变化时原子更新 30 张核心表并持久化 |
+| Warframe Market 元数据 | 物品目录、紫卡武器、紫卡词条 | 启动及每日 04:15 刷新，失败时继续使用持久快照 |
 | DE Public Export / browse.wf 图标 | 物品图标、背景、集团图标 | 下载后本地缓存；失败无图 |
 | Warframe Market | 行情、交易物品、紫卡词条、缩略图兜底 | 元数据持久缓存；硬依赖失败提示 |
-| 灰机 Warframe Wiki | `wiki` / `wk` 查询 | 访问失败提示稍后重试 |
+| 灰机 Warframe Wiki | `wiki` / `wk` 词条链接 | 按本地规则生成，不调用 Wiki API |
 | Warframe 官方新闻 | `news` / `hotfix` | 访问失败提示 |
 | 火山方舟 / 腾讯云 OCR | 图片识别 | 识别失败提示；紫卡可互为兜底 |
 
@@ -562,18 +589,18 @@ npm run deploy:bot -- --notice "本次更新内容"
 1. 检查 `--notice`。
 2. 建立发布期间唯一 SSH ControlMaster，或复用 `WF_SSH_CONTROL_PATH` 指向的已有连接。
 3. 切换 Node 22。
-4. 在 `packages/wf-bot/external/warframe` 运行 `yarn test`。
-5. 运行 `yarn build`。
+4. 运行 Warframe、娱乐和模糊命令插件的完整测试。
+5. 构建三个插件。
 6. 计算本地 `lib/index.js` SHA256。
-7. rsync 同步 `lib/` 到两个线上目录：
+7. rsync 同步 Warframe、娱乐和模糊命令插件的 `lib/` 到两个线上目录：
    - `/root/shichiya-bot-release/packages/wf-bot/external/warframe`
    - `/root/shichiya-blog/packages/wf-bot/external/warframe`
 8. SSH 计算两个线上目录的 `lib/index.js` SHA256，必须与本地一致。
 9. `sudo pm2 restart blog-bot`。
 10. 最多等待 30 秒，要求 PM2 状态 online，且 stdout 同时出现 `server listening at` 和 `Warframe 插件已加载，命令注册完成`。
 11. 检查本次启动后新增 error 日志；有新增错误则失败。
-12. 通过 OneBot WebSocket 发送私聊和白名单群更新公告。
-13. 所有 OneBot 回执成功后退出。
+12. 通过 OneBot WebSocket 只向好友 QQ `1071342037` 发送更新公告。
+13. 私聊 OneBot 回执成功后退出。
 
 发布公告格式：
 
@@ -613,7 +640,6 @@ WF_SSH_CONTROL_PATH="$WF_SSH_CONTROL_PATH" \
 - stdout 明确记录 Warframe 插件命令注册完成。
 - 本次启动无新增 error 日志。
 - 私聊公告收到 OneBot 成功回执。
-- 白名单群公告收到 OneBot 成功回执。
 
 ## 12. 运维排查
 

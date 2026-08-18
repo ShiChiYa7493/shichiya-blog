@@ -27,35 +27,22 @@ function required(name, value) {
   return value
 }
 
-function parseGroupIds(value) {
-  const entries = (value || '').split(',').map(item => item.trim()).filter(Boolean)
-  const ids = entries.map(Number)
-  if (ids.some(id => !Number.isSafeInteger(id) || id <= 0)) {
-    throw new Error('ONEBOT_GROUP_IDS 包含无效群号')
-  }
-  return [...new Set(ids)]
-}
-
 async function sendNotice() {
   const envFile = process.env.ONEBOT_ENV_FILE
     || '/root/shichiya-bot-release/packages/wf-bot/.env'
   const wsModule = process.env.ONEBOT_WS_MODULE
     || '/root/shichiya-bot-release/packages/wf-bot/node_modules/ws'
   const wsUrl = process.env.ONEBOT_WS_URL || 'ws://127.0.0.1:3011'
-  const userId = Number(process.env.ONEBOT_USER_ID || '1071342037')
-  const groupIds = parseGroupIds(process.env.ONEBOT_GROUP_IDS)
+  const userId = 1071342037
   const encodedMessage = required('DEPLOY_NOTICE_B64', process.env.DEPLOY_NOTICE_B64)
   const message = Buffer.from(encodedMessage, 'base64').toString('utf8')
   const token = required('ONEBOT_TOKEN', readEnvValue(envFile, 'ONEBOT_TOKEN'))
   const WebSocket = require(wsModule)
-  const targets = [
-    { action: 'send_private_msg', params: { user_id: userId, message }, label: `QQ ${userId}` },
-    ...groupIds.map(groupId => ({
-      action: 'send_group_msg',
-      params: { group_id: groupId, message },
-      label: `群 ${groupId}`,
-    })),
-  ].map((target, index) => ({
+  const targets = [{
+    action: 'send_private_msg',
+    params: { user_id: userId, message },
+    label: `QQ ${userId}`,
+  }].map((target, index) => ({
     ...target,
     echo: `deploy-notice-${Date.now()}-${process.pid}-${index}`,
   }))

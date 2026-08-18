@@ -90,6 +90,14 @@ function maxDistanceFor(length: number): number {
   return 2
 }
 
+/**
+ * 命令常以单字动作开头（如 蹲/查/删）。用户只发其余名词时通常是在聊天，
+ * 不是漏掉命令的第一个字；否则会对多个动作命令产生无意义的同分提示。
+ */
+function isLeadingCharacterOnlyDifference(input: string, candidate: string): boolean {
+  return candidate.length === input.length + 1 && candidate.slice(1) === input
+}
+
 export function match(
   input: string,
   candidates: Candidate[],
@@ -115,6 +123,7 @@ export function match(
   // 字符距离与拼音距离取小者：前者兜漏字与形近，后者兜同音错字
   const scored = candidates
     .filter((candidate) => candidate.normalized.length >= minFuzzyLength)
+    .filter((candidate) => !isLeadingCharacterOnlyDifference(input, candidate.normalized))
     .map((candidate) => ({
       candidate,
       distance: Math.min(

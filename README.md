@@ -102,7 +102,7 @@ cd ~/shichiya-blog && npm run deploy
 npm run deploy:bot -- --notice "订阅提醒支持更多任务类型，并改为每分钟检测"
 ```
 
-该命令会依次运行 Warframe 插件全量测试和 Node 22 构建，通过一条复用的 SSH 主连接同步并校验两个线上目录，重启 `blog-bot`，等待服务监听成功、检查新增错误日志，最后通过 OneBot 向 QQ `1071342037` 和白名单群发送更新公告。只有所有公告都收到对应动作回执后，发布命令才会成功退出；可追加 `--dry-run` 仅检查参数和发布目标。私聊接收人可用 `WF_NOTICE_USER_ID` 覆盖，逗号分隔的群列表可用 `WF_NOTICE_GROUP_IDS` 覆盖。
+该命令会依次运行 Warframe 插件全量测试和 Node 22 构建，通过一条复用的 SSH 主连接同步并校验两个线上目录，重启 `blog-bot`，等待服务监听成功、检查新增错误日志，最后通过 OneBot 只向好友 QQ `1071342037` 发送更新公告，不向任何群发送。默认发布必须提供 `--notice`；只有显式使用 `--skip-notice` 才会跳过公告。收到私聊动作回执后发布命令才会成功退出；可追加 `--dry-run` 仅检查参数和发布目标。
 
 机器人运行、命令、插件、缓存、订阅和故障排查详见 [Warframe QQ 机器人与插件完整文档](./docs/warframe-bot.md)。
 

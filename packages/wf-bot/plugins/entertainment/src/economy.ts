@@ -79,6 +79,34 @@ export function calculateBattlePool(stake: number, refundPercent: number): {
   return { payout: grossPool - refund - fee, refund, fee }
 }
 
+export function calculateChallengePool(
+  stake: number,
+  refundPercent: number,
+  targetWon: boolean,
+): {
+  challengerStake: number
+  targetStake: number
+  payout: number
+  refund: number
+  fee: number
+} {
+  const challengerStake = Math.max(1, Math.floor(stake))
+  const targetStake = Math.max(1, Math.floor(challengerStake / 2))
+  const loserStake = targetWon ? challengerStake : targetStake
+  const winnerStake = targetWon ? targetStake : challengerStake
+  const refundRate = Math.max(0, Math.min(50, Math.floor(refundPercent)))
+  const grossPool = challengerStake + targetStake
+  const refund = Math.floor(loserStake * refundRate / 100)
+  const baseFee = Math.floor(grossPool * 0.2)
+  const feeBeforeTargetPenalty = Math.min(
+    baseFee,
+    Math.max(0, grossPool - refund - (winnerStake + 1)),
+  )
+  const fullPayout = grossPool - refund - feeBeforeTargetPenalty
+  const payout = targetWon ? Math.max(1, Math.floor(fullPayout / 2)) : fullPayout
+  return { challengerStake, targetStake, payout, refund, fee: grossPool - refund - payout }
+}
+
 export function renderShop(discountPercent = 0): string {
   const discount = discountPercent > 0 ? `\n今日奇遇折扣：${discountPercent}%（首次购买生效）` : ''
   return `积分商店${discount}\n`

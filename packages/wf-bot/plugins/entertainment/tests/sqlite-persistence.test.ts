@@ -31,6 +31,10 @@ describe('sqlite persistence', () => {
       guildId: 'g1', senderId: 'u1', targetId: 'u2', amount: 10,
       date: '2026-07-29', createdAt: new Date('2026-07-29T00:00:00.000Z'),
     })
+    await firstStore.saveRouletteState({
+      guildId: 'g1', bulletChamber: 5, nextChamber: 3,
+      updatedAt: new Date('2026-07-29T00:00:00.000Z'),
+    })
     await first.stop()
 
     const second = new Context()
@@ -41,6 +45,10 @@ describe('sqlite persistence', () => {
     expect((await secondStore.getProfile('g1', 'u1')).credits).toBe(88)
     expect(await secondStore.getItemQuantity('g1', 'u1', 'power-booster')).toBe(2)
     expect(await secondStore.sentCreditsOnDate('g1', 'u1', '2026-07-29')).toBe(10)
+    expect(await secondStore.getRouletteState('g1')).toMatchObject({
+      bulletChamber: 5,
+      nextChamber: 3,
+    })
     await second.stop()
   })
 })

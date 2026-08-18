@@ -74,6 +74,29 @@ describe('match — 拼音模糊', () => {
 })
 
 describe('match — 编辑距离与歧义', () => {
+  it('不将缺少动作前缀的普通名词误判为命令', () => {
+    const actionCommands: Candidate[] = [
+      { canonical: '蹲九重天', normalized: '蹲九重天', command: 'watch' },
+      { canonical: '查九重天', normalized: '查九重天', command: 'watch-query' },
+      { canonical: '删九重天', normalized: '删九重天', command: 'watch-remove' },
+    ]
+
+    expect(match('九重天', actionCommands)).toEqual({ type: 'none' })
+  })
+
+  it('九重天作为裂缝命令别名时优先精确匹配', () => {
+    const candidates: Candidate[] = [
+      { canonical: '九重天', normalized: '九重天', command: 'fissure-rj' },
+      { canonical: '蹲九重天', normalized: '蹲九重天', command: 'watch' },
+      { canonical: '查九重天', normalized: '查九重天', command: 'watch-query' },
+      { canonical: '删九重天', normalized: '删九重天', command: 'watch-remove' },
+    ]
+
+    expect(match('九重天', candidates)).toEqual({
+      type: 'exact', canonical: '九重天', rest: '',
+    })
+  })
+
   it('漏字：钢铁裂 → 钢铁裂缝', () => {
     expect(match('钢铁裂', CANDIDATES)).toEqual({
       type: 'fuzzy', canonical: '钢铁裂缝', rest: '',
