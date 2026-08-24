@@ -141,11 +141,12 @@ npm run deploy:bot -- --notice "本次完整更新内容"
 2. Node 22 构建及 bundle 加载冒烟检查通过。
 3. Warframe、娱乐、模糊命令插件的 `lib/` 和 `start.js` 同步到线上主目录及镜像目录。
 4. bundle、启动文件和 Georgia 字体 SHA256 与本地一致。
-5. PM2 状态为 `online`。
+5. PM2 在 180 秒内进入 `online`。
 6. 新启动日志出现 `server listening at`。
 7. 新启动日志出现 `Warframe 插件已加载，命令注册完成`。
-8. 本次启动没有新增 error 日志。
-9. 最后只向好友 QQ `1071342037` 私聊发送一次公告，并确认 OneBot 回执；不向任何群发送。
+8. 新启动日志出现 `Public Export 每日检查` 和 `WFM 元数据`，确认两类每日数据初始化完成。
+9. 本次启动没有新增 error 日志。
+10. 最后只向好友 QQ `1071342037` 私聊发送一次公告，并确认 OneBot 回执；不向任何群发送。
 
 ## 4. SSH ControlMaster 复用
 

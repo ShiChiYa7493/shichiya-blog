@@ -31,6 +31,7 @@ QQ <-> NapCat(OneBot 11 WebSocket) <-> Koishi(wf-bot) <-> 插件
 | `packages/wf-bot/plugins/fuzzy-command` | 本地命令容错插件 |
 | `scripts/deploy-wf-bot.sh` | 机器人专项发布脚本 |
 | `scripts/send-onebot-private-message.cjs` | 发布公告发送脚本 |
+| `docs/research/warframe-nightmare-live-nodes` | 实时噩梦节点来源与重建方案研究 |
 
 ## 2. 运行环境
 
@@ -228,6 +229,8 @@ WM 交易市场支持低价监控：
 | 普通裂缝 | `fissure` / `裂缝` / `裂隙` |
 | 钢铁裂缝 | `fissure-sp` / `钢铁裂缝` / `钢铁裂隙` |
 | 九重天裂缝 | `fissure-rj` / `九重天裂缝` / `九重天裂隙` |
+| 噩梦节点（实验） | `nightmare` / `噩梦` / `噩梦任务` |
+| 噩梦奖励 | `nightmare-rewards` / `噩梦奖励`；可追加星球名 |
 | 开放世界周期 | `environment` / `env` / `平原` / `夜灵平野` / `奥布山谷` / `魔胎之境` |
 | 虚空商人 | `void-trader` / `voidtrader` / `虚空商人` / `奸商` |
 | 仲裁表 | `arbitration` / `arbi` / `仲裁` / `仲裁表` |
@@ -240,6 +243,8 @@ WM 交易市场支持低价监控：
 | 活动兑换 | `event-shop` / `活动兑换` / `娜卡商店` / `娜卡兑换` |
 | 官方新闻 | `news` / `新闻` / `官方新闻` |
 | 热修日志 | `hotfix` / `热修` / `更新日志` / `热修日志` |
+
+`噩梦` 按官方服务器时间、Public Export 节点子集和客户端轮换算法生成 8 小时快照，输出会标记“实验数据”或“待校准”。由于公开节点表不等同于客户端完整节点池，这个结果不能视为已确认的游戏内实时真值；算法边界和校准方法见第 8 节链接的专题研究。
 
 ### 4.4 赏金
 
@@ -292,6 +297,9 @@ WM 交易市场支持低价监控：
 | 遗物反查 | `relic` / `遗物` / `核桃` | `遗物 绝路 Prime 枪管` |
 | 战甲总览 | `warframes` / `战甲` / `战甲列表` | `战甲` |
 | 掉落查询 | `drop` / `掉落` | `掉落 内融核心` |
+| 4K 龙钥密室奖励 | `vault-rewards` / `4K奖励` / `4K密室` / `龙钥奖励` / `龙钥密室` | `4K密室` |
+| 月球七项原则密室 | `lua-ascension` / `月球密室` / `月球挑战` / `七项原则` | `月球密室 力量` |
+| 中枢结合目标 | `synthesis-target` / `结合目标` / `中枢目标` / `扫描目标` | `结合目标 枪兵` |
 | Wiki 查询 | `wiki` / `百科` / `wk` | `wk 夜灵水力使` |
 | 命令搜索 | `command-search` / `命令搜索` / `搜命令` / `找命令` | `命令搜索 裂缝` |
 
@@ -359,8 +367,11 @@ Wiki 使用本地中英文字典和社区别名直接生成灰机 Warframe Wiki 
 | 赠送积分 | `赠送 <target> <amount>` / `送积分` | 向今日已签到群友赠送积分 |
 | 积分排行 | `积分排行` / `排行榜` | 本群积分排行 |
 | 对战排行 | `对战排行` | 本群 MMR 排行 |
+| 俄罗斯轮盘 | `射爆` | 每群独立的六发左轮；中弹者禁言 1 分钟并重新装填 |
 
 对战结算中仅发起方消耗对战券并支付完整积分，被挑战方支付一半积分；被挑战方获胜时，积分奖励、胜利奇遇积分和胜利经验均减半。
+
+群聊普通消息中包含“原神”时，娱乐插件会尝试将发言者禁言 30 秒；机器人自身消息、私聊以及信息不完整的会话不会触发。`射爆` 的每群弹仓状态保存在数据库中，并通过群级异步锁顺序结算并发请求。
 
 娱乐数据表：
 
@@ -368,6 +379,7 @@ Wiki 使用本地中英文字典和社区别名直接生成灰机 Warframe Wiki 
 - `entertainment_battle`
 - `entertainment_inventory`
 - `entertainment_transfer`
+- `entertainment_roulette`
 
 娱乐出图背景使用 DE Public Export 资源，首次使用时下载并缓存到本地。
 
@@ -477,6 +489,8 @@ Warframe 插件共用 `globalImageCache`：
 | Warframe 官方新闻 | `news` / `hotfix` | 访问失败提示 |
 | 火山方舟 / 腾讯云 OCR | 图片识别 | 识别失败提示；紫卡可互为兜底 |
 
+实时噩梦节点不在官方 World State 或当前社区 API 中直接提供。公开数据边界、客户端重建算法和校准要求见 [Warframe 实时噩梦节点获取方案（截至 2026-08-06）](./research/warframe-nightmare-live-nodes/report.md)；该研究是带访问日期的阶段性结论，不是生产实时节点源。
+
 ## 9. 持久化数据
 
 Koishi SQLite 默认在 `packages/wf-bot/data/koishi.db`。
@@ -488,6 +502,8 @@ Warframe 插件表：
 | `wf_subscription` | 个人订阅 |
 | `wf_subscription_state` | 每个频道/条件的上一轮推送状态，避免重复提醒 |
 | `wf_subscription_group` | 群级总开关、分类开关、授权成员 |
+| `wf_market_watch` | WM 普通物品和紫卡低价监控条件 |
+| `wf_market_watch_state` | WM 监控去重指纹和最近价格 |
 | `wf_checkin` | Warframe 插件内旧签到数据 |
 
 娱乐插件表：
@@ -498,8 +514,9 @@ Warframe 插件表：
 | `entertainment_battle` | 对战记录 |
 | `entertainment_inventory` | 道具背包 |
 | `entertainment_transfer` | 积分赠送记录 |
+| `entertainment_roulette` | 每群俄罗斯轮盘弹仓状态 |
 
-发布脚本只同步 `lib/`，不会覆盖 `data/` 和 `.cache/`。
+发布脚本只同步三个插件的 `lib/` 和机器人 `start.js`，不会覆盖 `data/`、`.cache/` 或 `.env`。
 
 ## 10. 开发
 
@@ -605,13 +622,11 @@ npm run deploy:bot -- --notice "本次更新内容"
 3. 切换 Node 22。
 4. 运行 Warframe、娱乐和模糊命令插件的完整测试。
 5. 构建三个插件。
-6. 计算本地 `lib/index.js` SHA256。
-7. rsync 同步 Warframe、娱乐和模糊命令插件的 `lib/` 到两个线上目录：
-   - `/root/shichiya-bot-release/packages/wf-bot/external/warframe`
-   - `/root/shichiya-blog/packages/wf-bot/external/warframe`
-8. SSH 计算两个线上目录的 `lib/index.js` SHA256，必须与本地一致。
+6. 计算 Warframe、娱乐、轮盘、模糊命令、`start.js` 和 Georgia 字体的本地 SHA256。
+7. rsync 同步三个插件的 `lib/` 和 `start.js` 到线上主 bot 根目录 `/root/shichiya-bot-release/packages/wf-bot` 及镜像根目录 `/root/shichiya-blog/packages/wf-bot`。
+8. SSH 逐项计算两套线上目录的 SHA256，必须与本地一致。
 9. `sudo pm2 restart blog-bot`。
-10. 最多等待 30 秒，要求 PM2 状态 online，且 stdout 同时出现 `server listening at` 和 `Warframe 插件已加载，命令注册完成`。
+10. 最多等待 180 秒，要求 PM2 状态 online，且新 stdout 同时出现 `server listening at`、`Warframe 插件已加载，命令注册完成`、`Public Export 每日检查` 和 `WFM 元数据`。
 11. 检查本次启动后新增 error 日志；有新增错误则失败。
 12. 通过 OneBot WebSocket 只向好友 QQ `1071342037` 发送更新公告。
 13. 私聊 OneBot 回执成功后退出。
@@ -652,6 +667,7 @@ WF_SSH_CONTROL_PATH="$WF_SSH_CONTROL_PATH" \
 - 主目录和镜像目录 SHA 与本地一致。
 - `blog-bot` online。
 - stdout 明确记录 Warframe 插件命令注册完成。
+- stdout 明确记录 Public Export 每日检查和 WFM 元数据初始化。
 - 本次启动无新增 error 日志。
 - 私聊公告收到 OneBot 成功回执。
 

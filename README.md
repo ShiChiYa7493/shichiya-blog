@@ -6,17 +6,18 @@
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue)](./LICENSE)
 [![备案](https://img.shields.io/badge/ICP-蜀ICP备2026017856号-lightgrey)](https://beian.miit.gov.cn/)
 
-优川七夜的个人博客 —— 一个 monorepo 全栈应用，前后端分离，自带后台管理与图床。
+优川七夜的个人博客与 Warframe QQ 机器人 —— 一个前后端分离的 monorepo，包含后台管理、图床和独立 Koishi bot。
 
 ---
 
 ## ✨ 功能
 
 - **博客前台**：首页、文章详情、分类 / 标签筛选、归档、全文搜索、相册、关于、RSS
-- **后台管理**：文章 Markdown 编辑、分类 / 标签管理、评论审核、相册及分类管理、站点设置
+- **后台管理**：文章 Markdown 编辑、分类 / 标签管理、评论状态管理、相册及分类管理、管理员资料设置
 - **文章特性**：Markdown + 代码高亮、自动目录、阅读量统计（按日去重）
-- **评论系统**：树形回复、可选审核、邮箱标记
+- **评论能力**：后端支持树形回复和审核状态；前台评论区目前未启用
 - **相册**：分类归档、图片直传
+- **Warframe QQ 机器人**：世界状态、订阅提醒、市场行情、资料查询、模糊命令和群聊娱乐
 
 ## 🛠️ 技术栈
 
@@ -24,6 +25,7 @@
 | --- | --- |
 | 前端 | Next.js 14 (App Router) · React · Tailwind CSS · shadcn/ui · framer-motion |
 | 后端 | NestJS 10 · Prisma 6 · PostgreSQL · JWT (passport) |
+| 机器人 | Koishi 4 · OneBot 11 · NapCat · Puppeteer · SQLite |
 | 部署 | PM2 · Nginx · Let's Encrypt (certbot) |
 | 工程 | npm workspaces · TypeScript |
 
@@ -37,13 +39,14 @@ shichiya-blog/
 │   │       ├── blog/                博客前台
 │   │       └── admin/               后台管理
 │   ├── server/                      NestJS 应用（端口 3001）
-│       ├── src/modules/             业务模块
-│       │     article / auth / category / tag / comment /
-│       │     gallery / gallery-category / stats / upload
-│       └── prisma/                  schema、迁移、seed
+│   │   ├── src/modules/             业务模块
+│   │   │   └── article / auth / category / tag / comment /
+│   │   │       gallery / gallery-category / stats / upload
+│   │   └── prisma/                  schema、迁移、seed
 │   └── wf-bot/                      Warframe QQ 机器人（Koishi + NapCat）
 ├── uploads/                         上传文件（Nginx 直接 alias）
-├── docs/warframe-bot.md             Warframe 机器人与插件完整文档
+├── docs/                            运维、开发流程与专题研究
+├── scripts/                         部署及 OneBot 辅助脚本
 ├── ecosystem.config.js              PM2 配置
 └── nginx.conf.example               Nginx 反代示例
 ```
@@ -52,7 +55,7 @@ shichiya-blog/
 
 ### 环境要求
 
-- Node.js ≥ 18
+- Node.js 20（仅博客）或 Node.js 22（机器人及仓库完整构建 / 发布）
 - PostgreSQL ≥ 14
 
 ### 首次安装
@@ -62,6 +65,7 @@ shichiya-blog/
 git clone https://github.com/ShiChiYa7493/shichiya-blog.git
 cd shichiya-blog
 npm install
+npm --prefix packages/wf-bot install
 
 # 2. 配置环境变量
 cp packages/server/.env.example   packages/server/.env
@@ -94,7 +98,7 @@ npm run dev:frontend   # 前端 → http://localhost:3000
 cd ~/shichiya-blog && npm run deploy
 ```
 
-`npm run deploy` 等价于：`git pull → npm install → npm run db:migrate → npm run build → pm2 reload --update-env`。
+`npm run deploy` 等价于：`git pull → npm install → 安装 bot 依赖 → npm run db:migrate → npm run build → pm2 reload --update-env`。
 
 机器人从本地验证并发布时，使用专用命令并提供本次更新内容：
 
@@ -104,7 +108,11 @@ npm run deploy:bot -- --notice "订阅提醒支持更多任务类型，并改为
 
 该命令会依次运行 Warframe 插件全量测试和 Node 22 构建，通过一条复用的 SSH 主连接同步并校验两个线上目录，重启 `blog-bot`，等待服务监听成功、检查新增错误日志，最后通过 OneBot 只向好友 QQ `1071342037` 发送更新公告，不向任何群发送。默认发布必须提供 `--notice`；只有显式使用 `--skip-notice` 才会跳过公告。收到私聊动作回执后发布命令才会成功退出；可追加 `--dry-run` 仅检查参数和发布目标。
 
-机器人运行、命令、插件、缓存、订阅和故障排查详见 [Warframe QQ 机器人与插件完整文档](./docs/warframe-bot.md)。
+相关文档：
+
+- [Warframe QQ 机器人与插件完整文档](./docs/warframe-bot.md)
+- [Warframe 机器人本地开发、测试与发布流程](./docs/wf-bot-development-release-workflow.md)
+- [Warframe 实时噩梦节点获取方案（截至 2026-08-06）](./docs/research/warframe-nightmare-live-nodes/report.md)
 
 ### npm 脚本一览
 
@@ -113,7 +121,7 @@ npm run deploy:bot -- --notice "订阅提醒支持更多任务类型，并改为
 | `npm run deploy` | 完整发布（代码 + DB + 重启） |
 | `npm run deploy:bot -- --notice "…"` | 验证并发布机器人，成功后自动发送私聊公告 |
 | `npm run db:migrate` | 仅应用 Prisma 迁移并重新生成 client |
-| `npm run build` | 仅构建 server + frontend |
+| `npm run build` | 构建 server、frontend 和 wf-bot |
 | `npm run dev:server` / `dev:frontend` | 开发模式 |
 
 ### 运行时拓扑
@@ -130,7 +138,7 @@ Internet ──► Nginx (80/443, TLS) ──┬─► 127.0.0.1:3000   blog-web
 | `blog-api` | 3001 | 127.0.0.1 | NestJS 编译后产物 |
 | `blog-bot` | 5140 | 127.0.0.1 | Koishi；通过宿主机 3011 连接 NapCat |
 
-> 🔒 两个服务**仅监听回环**，公网入口由 Nginx 收拢，端口 3000/3001 不对外暴露。
+> 🔒 Web、API、Koishi 和 NapCat 端口均只监听回环地址；公网入口由 Nginx 收拢，端口 3000/3001 不直接对外暴露。
 
 ### Nginx & HTTPS
 
@@ -153,7 +161,7 @@ ss -tlnp | grep -E ':(3000|3001)'   # 确认服务只监听 127.0.0.1
 
 ## ⚙️ 环境变量
 
-详见 `packages/{server,frontend}/.env.example`。关键项：
+博客变量详见 `packages/{server,frontend}/.env.example`，机器人变量保存在不入库的 `packages/wf-bot/.env`。关键项：
 
 | 变量 | 用途 | 示例 |
 | --- | --- | --- |
@@ -179,7 +187,7 @@ GalleryCategory ──► GalleryImage      # 相册分类与图片
 主要约束：
 
 - `Article.status`：`DRAFT` / `PUBLISHED`
-- `Comment.status`：`PENDING` / `APPROVED` / `REJECTED`，支持 `parentId` 自关联做回复
+- `Comment.status`：`PENDING` / `APPROVED` / `REJECTED`，支持 `parentId` 自关联做回复；公开提交当前默认 `APPROVED`
 - `GalleryImage.categoryId` 可空，分类删除时置空（`SetNull`）
 
 ## 📜 License
