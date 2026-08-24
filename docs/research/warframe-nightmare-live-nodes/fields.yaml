@@ -1,0 +1,70 @@
+topic: "Warframe 实时噩梦节点获取方案"
+created_at: '2026-08-06'
+field_categories:
+- category: Availability
+  fields:
+  - name: provides_live_nodes
+    label: 是否提供实时节点
+    description: 能否列出当前星球、节点和任务类型
+    detail_level: brief
+    required: true
+  - name: access_method
+    label: 访问方法
+    description: 端点、仓库、算法或客户端入口
+    detail_level: detailed
+    required: true
+  - name: authentication
+    label: 认证要求
+    description: 是否需要账号、令牌、游戏会话或人工提交
+    detail_level: brief
+    required: true
+  - name: observable_fields
+    label: 可取得字段
+    description: 节点、星球、任务类型、轮换时间、修正条件、完成状态等
+    detail_level: detailed
+    required: true
+- category: Reliability
+  fields:
+  - name: update_latency
+    label: 更新延迟
+    description: 数据更新时间与可接受轮询频率
+    detail_level: brief
+    required: true
+  - name: source_of_truth
+    label: 数据根源
+    description: 官方全局状态、玩家账户状态、客户端计算或众包
+    detail_level: detailed
+    required: true
+  - name: maintenance_status
+    label: 维护状态
+    description: 项目或端点当前是否活跃可用
+    detail_level: brief
+    required: true
+  - name: evidence
+    label: 证据
+    description: URL、访问日期、代码位置或响应摘录
+    detail_level: detailed
+    required: true
+- category: Integration
+  fields:
+  - name: implementation_fit
+    label: 机器人适配性
+    description: 如何接入现有缓存和订阅调度
+    detail_level: detailed
+    required: true
+  - name: security_legal_risk
+    label: 安全与合规风险
+    description: 账户、凭证、服务条款、依赖稳定性风险
+    detail_level: detailed
+    required: true
+  - name: recommendation
+    label: 建议
+    description: 采用、备用、仅研究或拒绝采用
+    detail_level: detailed
+    required: true
+  - name: confidence
+    label: 置信度
+    description: high、medium 或 low，并说明依据
+    detail_level: brief
+    required: true
+uncertain: []

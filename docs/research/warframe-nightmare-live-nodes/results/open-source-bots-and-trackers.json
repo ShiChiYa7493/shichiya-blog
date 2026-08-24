@@ -1,0 +1,35 @@
+{
+  "name": "Open Source Bots and Trackers",
+  "category": "open-source",
+  "provides_live_nodes": "未发现可直接复用且持续维护的公开实时噩梦节点 API、机器人或跟踪器。",
+  "access_method": "通过 GitHub 代码搜索 NightmareRegion、CachedSkullNodes、nightmareMode，并检查公开 Warframe 机器人、状态项目与 Lua 转储。",
+  "authentication": "公开代码无需认证；GitHub 搜索受 API 配额限制。",
+  "observable_fields": "可找到旧客户端的生成逻辑和私服中的任务完成字段，但没有可信的实时节点列表服务。",
+  "update_latency": "不存在可评估的实时上游。",
+  "source_of_truth": "反编译客户端逻辑、公开静态数据和社区实现。",
+  "maintenance_status": "rogerxiii 转储停在 2020；Gipn0za 转储标注为 2022-07-28；Gudov 转储停在 2019。SpaceNinjaServer 在 2026-08 仍活跃，但它是私服实现，不是实时公共节点 API。",
+  "evidence": [
+    {
+      "url": "https://github.com/Gipn0za/warframe-lua-dump/blob/main/dis/Lotus/Interface/Background.lua",
+      "accessed_at": "2026-08-06",
+      "finding": "2022 客户端逻辑仍按区域分组、设置轮换种子并依次洗牌；排除 Dojo、Dark Sector、Deep Space、Zariman 和多类特殊任务。"
+    },
+    {
+      "url": "https://github.com/rogerxiii/warframe-lua-disassembled/blob/master/lua/Lotus/Interface/Background.lua",
+      "accessed_at": "2026-08-06",
+      "finding": "2020 代码提供完整生成流程，但地域规则早于 Deimos/Zariman/Hollvania，不能直接视为 2026 规则。"
+    },
+    {
+      "url": "https://github.com/SpaceNinjaServer/SpaceNinjaServer/blob/master/src/services/rngService.ts",
+      "accessed_at": "2026-08-06",
+      "finding": "提供声称与客户端一致的 SRng 线性同余算法及 Fisher-Yates shuffle，可用于可重复原型。"
+    }
+  ],
+  "implementation_fit": "应复用已验证的 SRng 数学实现思路，但不能依赖任何私服。算法代码应在机器人内独立实现，并以固定种子测试向量锁定行为。",
+  "security_legal_risk": "反编译来源只能作为互操作研究证据；不要分发游戏资源、绕过认证或连接私有游戏接口。开源代码复用前需单独核对许可证。",
+  "recommendation": "仅将客户端逻辑和 RNG 实现用于研究/重建；没有可采用的第三方实时 API。",
+  "confidence": "medium：算法证据强，但最新公开 Lua 转储只到 2022，2026 新区域过滤仍需实测校准。",
+  "uncertain": [
+    "update_latency"
+  ]
+}

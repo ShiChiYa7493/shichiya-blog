@@ -1,0 +1,54 @@
+{
+  "name": "Deterministic Rotation Reconstruction",
+  "category": "algorithm",
+  "provides_live_nodes": "理论上可由客户端算法本地重建，但目前缺少客户端完整 GetNodeList 顺序和 2026 游戏内真值，现有实现不能视为准确实时源。",
+  "access_method": "领先候选为 seed=floor(worldState.Time/28800)：客户端调用独立的原生轮换种子函数，随后设置全局随机种子；ShuffleTable 默认使用引擎 SRandomInt(1,n) 对每个区域做倒序 Fisher-Yates。必须按客户端 GetNodeList 的完整原始顺序先将所有节点（包括随后会被过滤的 Hub、Junction 等）分组并洗牌，最后才应用静态及动态排除条件。官方 Public Export 的 269 个节点不是完整 GetNodeList，不能单独作为已确认节点池。",
+  "authentication": "不需要认证。",
+  "observable_fields": "可生成星球、节点、普通任务类型、8 小时轮换起止时间；不能知道某个玩家是否已解锁星球或是否已领取本轮奖励。噩梦修正条件不是节点选择阶段下发的固定字段。",
+  "update_latency": "算法本身可即时计算，轮换边界为 UTC 00:00、08:00、16:00。没有证据要求固定等待 1-3 分钟；应以官方 worldState.Time 判断 seed，仅在接口缓存或网络时钟未跨界时短暂重试。客户端同一 seed 会复用 CachedSkullNodes，因此动态冲突集合取决于客户端本轮首次生成时刻。",
+  "source_of_truth": "官方服务器时间 + 客户端完整星图节点数组及顺序 + 客户端 SRandomInt 实现 + 本轮首次生成时的世界状态冲突集合。Public Export 只能提供其中一部分静态节点。",
+  "maintenance_status": "8 小时轮换和总体流程自 Recurring Nightmares 后长期稳定；2022 Lua 与 2026 Wiki 相互印证。2026 完整节点数组、精确区域归属和新区域过滤代码未公开。",
+  "evidence": [
+    {
+      "url": "https://wiki.warframe.com/w/Nightmare_Mode#Mechanics",
+      "accessed_at": "2026-08-06",
+      "finding": "当前页面说明每个合格星球一个随机节点、所有玩家共享节点、每 8 小时轮换；排除 Empyrean Proximas、Zariman、Deimos 的 Albrecht's Laboratories 与 Hollvania。"
+    },
+    {
+      "url": "https://wiki.warframe.com/w/Nightmare_Mode/Rewards",
+      "accessed_at": "2026-08-06",
+      "finding": "当前奖励分组列出 18 个适用区域：Mercury、Venus、Earth、Mars、Phobos、Ceres、Jupiter、Europa、Void、Lua、Kuva Fortress、Deimos、Saturn、Uranus、Neptune、Pluto、Eris、Sedna。"
+    },
+    {
+      "url": "https://github.com/Gipn0za/warframe-lua-dump/blob/main/dis/Lotus/Interface/Background.lua",
+      "accessed_at": "2026-08-06",
+      "finding": "算法从 GetNodeList 取得完整节点数组，按 region 分组全部节点，设置一次全局随机种子并逐区域调用 ShuffleTable；洗牌完成后才排除 Hub/Junction、突击、裂缝、警报、入侵、活动、集团任务及特殊任务类型。原生轮换种子函数直接以 28800 为参数。"
+    },
+    {
+      "url": "https://github.com/Gipn0za/warframe-lua-dump/blob/main/dis/EE/Interface/Utilities.lua",
+      "accessed_at": "2026-08-06",
+      "finding": "ShuffleTable 在未传入随机函数时明确使用引擎全局 SRandomInt(1,n)，再执行倒序 Fisher-Yates；噩梦调用没有传入替代随机函数。"
+    },
+    {
+      "url": "https://github.com/calamity-inc/warframe-public-export-plus/commit/96180b982eaa61ac9f2e98b33a1d1bf8760fd15f",
+      "accessed_at": "2026-08-06",
+      "finding": "项目曾一次补入官方 ExportRegions 缺失的 Hub、Junction、PvP、Sanctuary Onslaught、Railjack 等节点，证明 Public Export 不是客户端完整节点池；后续又按 Wiki 数据重排这些补充节点，因此当前补充区顺序不能当作客户端 GetNodeList 顺序。"
+    },
+    {
+      "url": "https://github.com/SpaceNinjaServer/SpaceNinjaServer/blob/master/src/services/rngService.ts",
+      "accessed_at": "2026-08-06",
+      "finding": "社区私服实现提供了声称与客户端相同的 64 位 SRandomInt 算法，但公开仓库没有附带可由官方客户端独立复核的测试向量，因此仍需用实际噩梦节点校准。"
+    }
+  ],
+  "implementation_fit": "适合作为最终方向，但当前只能用于离线校准。应同时生成官方 269 节点、全部补充节点、排除 Railjack 补充节点、将 Railjack 归入 Deep Space 等候选方案，并与同一时间戳的游戏内 18 节点列表比较。只有找到连续轮换 18/18 一致的节点池顺序与 RNG 后，才应替换生产算法；生产结果仍需按 seed 持久化。",
+  "security_legal_risk": "低，不需账号和私有接口。主要是正确性风险：公开节点表可能不等同于客户端 GetNodeList 的完整集合，新区域规则可能变化，动态冲突缓存也可能产生短暂偏差。",
+  "recommendation": "保留为首选研究方向，但立即停止把当前 269 节点结果当作准确值。取得 PC 端同一轮完整 18 节点、截图时间、登录或首次打开星图时间及本轮是否完成过噩梦任务后做候选匹配；一轮可大量排除错误方案，连续三轮最适合确认节点池顺序、RNG 和动态冲突行为。",
+  "confidence": "medium-low：周期、种子入口、分组、洗牌调用和大部分过滤规则有源码支撑；完整节点池顺序、SRandomInt 独立测试向量、2026 过滤规则和游戏内真值仍缺失。",
+  "uncertain": [
+    "2026_client_filter_exactness",
+    "full_get_node_list_order",
+    "srandomint_test_vectors",
+    "railjack_internal_region_assignment",
+    "dynamic_conflict_snapshot_timing"
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "name": "Official World State and Public Export",
+  "category": "official-public",
+  "provides_live_nodes": "否。官方 worldState.php 明确不包含 Nightmare Mode；Public Export 提供当前静态星图节点及顺序，但不标记本轮噩梦节点。",
+  "access_method": "轮询 https://api.warframe.com/cdn/worldState.php 获取服务器 Time 和会影响选点的动态任务；通过 Public Export 的 index_en.txt.lzma 定位带哈希的 ExportRegions_en.json，取得官方公开的有序节点子集。",
+  "authentication": "不需要认证。",
+  "observable_fields": "worldState.php 可取得 Time、ActiveMissions、Alerts、Invasions、Goals、SyndicateMissions、Sorties、NodeOverrides 等；ExportRegions 可取得 uniqueName、systemIndex、节点名称、任务类型索引和阵营索引。两者都没有当前 Nightmare 节点字段。",
+  "update_latency": "worldState.php 可按分钟级轮询；噩梦本身按 8 小时轮换。没有证据要求固定延迟 1-3 分钟，应直接以响应中的官方 Time 判断是否跨界；若边界请求仍返回旧 Time，再做短暂重试。轮换中途持续用新的冲突任务重算会偏离客户端 CachedSkullNodes 行为。",
+  "source_of_truth": "官方 worldState 是服务器时间和动态冲突任务的来源；Public Export 只覆盖部分静态星图节点。当前噩梦节点由客户端结合内部完整节点数组计算，而不是由服务端直接下发。",
+  "maintenance_status": "活跃。2026-08-06 实测 worldState Time 为 1785981614，顶层无任何 nightmare 字段；当前 Public Export 含 269 个 ExportRegions 节点。",
+  "evidence": [
+    {
+      "url": "https://api.warframe.com/cdn/worldState.php",
+      "accessed_at": "2026-08-06",
+      "finding": "顶层字段无 NightmareModeMissions/nightmare；Time 可用，WorldSeed 是签名字符串。"
+    },
+    {
+      "url": "https://wiki.warframe.com/w/World_State#Not_Included",
+      "accessed_at": "2026-08-06",
+      "finding": "Wiki 的 Not Included 明确列出 Nightmare Mode；同页说明 WorldSeed 是 World State 的 RSA signature，而非可直接使用的轮换种子。"
+    },
+    {
+      "url": "https://content.warframe.com/PublicExport/index_en.txt.lzma",
+      "accessed_at": "2026-08-06",
+      "finding": "索引提供当前 ExportRegions_en.json 的内容哈希；下载后的 269 个节点与 warframe-public-export-plus 0.6.6 的前 269 个对象键逐项一致，但客户端 GetNodeList 还会包含 Public Export 缺失的特殊节点。"
+    }
+  ],
+  "implementation_fit": "适合作为本地重建的部分输入：以 Time 计算 8 小时种子，以 worldState 提供动态排除集合。ExportRegions 可提供普通星图节点字段，但不能独自构成客户端完整洗牌池；还需校准缺失特殊节点的原始顺序与内部区域归属。不能把 WorldSeed 解码后当噩梦种子。",
+  "security_legal_risk": "低。只读取公开官方端点；需要缓存、合理限流并容忍字段变更。Public Export URL 含内容哈希，应先刷新索引，不能写死旧哈希。",
+  "recommendation": "采用，作为重建方案的官方输入；不要期待官方端点直接返回实时噩梦列表。",
+  "confidence": "high：接口响应、Wiki 文档和本地实测互相一致。",
+  "uncertain": []
+}

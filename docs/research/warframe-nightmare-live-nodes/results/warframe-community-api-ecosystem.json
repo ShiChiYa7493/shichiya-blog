@@ -1,0 +1,33 @@
+{
+  "name": "Warframe Community API Ecosystem",
+  "category": "community-api",
+  "provides_live_nodes": "否。WarframeStat.us 当前 PC 响应没有 nightmare/nightmares 字段，WFCD 的世界状态解析生态也没有产生实时噩梦列表。",
+  "access_method": "可查询 https://api.warframestat.us/pc 以及 WFCD 的 warframe-status、warframe-worldstate-parser 源码，但只能取得它们已经从官方 worldState 解析出的内容。",
+  "authentication": "不需要认证。",
+  "observable_fields": "可取得警报、裂缝、入侵、突击、集团任务等常见世界状态；不能取得当前噩梦星球、节点或本轮完成状态。",
+  "update_latency": "社区 API 通常为分钟级缓存，但对噩梦无数据，因此延迟指标不适用。",
+  "source_of_truth": "官方 worldState.php 的二次解析，并非独立噩梦来源。",
+  "maintenance_status": "WarframeStat.us 可用；其返回字段截至 2026-08-06 仍无噩梦。",
+  "evidence": [
+    {
+      "url": "https://api.warframestat.us/pc",
+      "accessed_at": "2026-08-06",
+      "finding": "nightmare 与 nightmares 查询均为 null，顶层 keys 不含相关字段。"
+    },
+    {
+      "url": "https://github.com/WFCD/warframe-status",
+      "accessed_at": "2026-08-06",
+      "finding": "社区状态服务依赖官方世界状态，不包含独立噩梦采集链路。"
+    },
+    {
+      "url": "https://github.com/WFCD/warframe-worldstate-parser",
+      "accessed_at": "2026-08-06",
+      "finding": "解析器没有可供消费的实时 Nightmare 节点模型。"
+    }
+  ],
+  "implementation_fit": "可继续用作其他 Warframe 数据来源，但不应为噩梦功能增加对 WarframeStat.us 的依赖。本地重建仍需直接使用官方 Time 和静态节点数据。",
+  "security_legal_risk": "低，但增加第三方可用性和缓存延迟风险，且无法解决噩梦数据缺失。",
+  "recommendation": "拒绝作为噩梦节点来源；仅保留为其他世界状态功能的可选上游。",
+  "confidence": "high：已检查实时响应和相关开源项目的数据边界。",
+  "uncertain": []
+}

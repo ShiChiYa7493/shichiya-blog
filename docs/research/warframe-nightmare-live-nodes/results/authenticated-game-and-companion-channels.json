@@ -1,0 +1,35 @@
+{
+  "name": "Authenticated Game and Companion Channels",
+  "category": "authenticated",
+  "provides_live_nodes": "游戏客户端可以显示玩家当前可见的噩梦节点；没有证据表明官方 Companion 提供独立、稳定、可公开调用的噩梦列表端点。",
+  "access_method": "游戏客户端在本地根据全局轮换和账户的星球完成/本轮完成状态生成 CachedSkullNodes。账户任务完成上报携带节点与 nightmareMode 标志，而不是由世界状态响应下发节点。",
+  "authentication": "游戏客户端需要玩家会话；公开重建全局节点不需要认证。",
+  "observable_fields": "客户端可见全局候选节点、玩家是否解锁该星球以及本轮是否已经完成；后两项属于账户个体状态。",
+  "update_latency": "游戏内在 8 小时种子改变和世界状态缓存刷新后更新；准确延迟需游戏内观测。",
+  "source_of_truth": "节点选择是客户端计算；玩家解锁与完成记录来自账户状态。",
+  "maintenance_status": "游戏客户端当然有效，但协议和内部接口未公开且会随版本变化。",
+  "evidence": [
+    {
+      "url": "https://github.com/Gipn0za/warframe-lua-dump/blob/main/dis/Lotus/Interface/Background.lua",
+      "accessed_at": "2026-08-06",
+      "finding": "生成函数先检查区域完成状态和 periodic mission 完成状态，再把合格节点写入 CachedSkullNodes。"
+    },
+    {
+      "url": "https://github.com/Gipn0za/warframe-lua-dump/blob/main/dis/Lotus/Interface/LotusNetworkUtilities.lua",
+      "accessed_at": "2026-08-06",
+      "finding": "启动噩梦任务时设置 periodicMissionTag=NightmareRegion{region} 和 periodicMissionCooldown=28800。"
+    },
+    {
+      "url": "https://github.com/SpaceNinjaServer/SpaceNinjaServer/blob/master/src/services/missionInventoryUpdateService.ts",
+      "accessed_at": "2026-08-06",
+      "finding": "任务完成请求使用 rewardInfo.node 与 rewardInfo.nightmareMode，支持节点由客户端先确定的判断。"
+    }
+  ],
+  "implementation_fit": "机器人应发布不含个人完成状态的全局节点。若未来提供个人完成提醒，应让用户自行勾选或在机器人侧记录，不应索取 Warframe 账号、密码或会话令牌。",
+  "security_legal_risk": "高于公开重建。保存游戏凭证、抓取私有接口或模拟客户端会增加账号安全、协议变化和服务条款风险。",
+  "recommendation": "不采用认证接口；只把游戏客户端列表作为人工校准基准。",
+  "confidence": "medium：客户端和私服源码支持计算流程，但官方 Companion 的完整当前协议未公开。",
+  "uncertain": [
+    "update_latency"
+  ]
+}

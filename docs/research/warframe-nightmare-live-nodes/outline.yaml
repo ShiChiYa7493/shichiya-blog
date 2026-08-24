@@ -1,0 +1,32 @@
+topic: "Warframe 实时噩梦节点获取方案"
+created_at: '2026-08-06'
+items:
+- name: Official World State and Public Export
+  category: official-public
+  description: 检查 worldState.php、公开导出及公开网页是否暴露实时噩梦节点、轮换标识或可推导种子
+  source: official APIs and local captured payloads
+- name: Warframe Community API Ecosystem
+  category: community-api
+  description: 检查 warframestat.us、WFCD 项目及其他社区 API 是否提供噩梦节点，追溯字段来源和维护状态
+  source: community APIs and source repositories
+- name: Open Source Bots and Trackers
+  category: open-source
+  description: 检索公开机器人、网站和工具如何显示或采集实时噩梦任务，确认是否存在可复用算法或端点
+  source: GitHub and public code search
+- name: Authenticated Game and Companion Channels
+  category: authenticated
+  description: 调查游戏客户端、官方 Companion 或账户相关接口是否返回玩家可见噩梦节点，并评估凭证与合规风险
+  source: official clients, protocol documentation, community reverse engineering
+- name: Deterministic Rotation Reconstruction
+  category: algorithm
+  description: 调查噩梦节点是否由全局时间、WorldSeed 或静态节点表确定，能否无需实时源准确重建
+  source: game data, patch notes, source analysis and observations
+execution:
+  batch_size: 3
+  items_per_agent: 1
+  output_dir: results
+research_policy:
+  current_date: '2026-08-06'
+  time_range: current as of 2026-08-06
+  language: zh-CN
+  source_policy: prefer primary sources; mark unsupported claims as uncertain
