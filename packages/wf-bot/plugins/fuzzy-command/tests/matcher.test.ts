@@ -71,6 +71,26 @@ describe('match — 拼音模糊', () => {
     const short: Candidate[] = [{ canonical: '打', normalized: '打', command: 'x' }]
     expect(match('大', short)).toEqual({ type: 'none' })
   })
+
+  it('纯 ASCII 别名不参与模糊，仅整词精确/前缀可命中', () => {
+    const ascii: Candidate[] = [
+      { canonical: 'hex', normalized: 'hex', command: 'bounty-hex' },
+      { canonical: '1999', normalized: '1999', command: 'bounty-hex' },
+      { canonical: '六人组', normalized: '六人组', command: 'bounty-hex' },
+    ]
+    expect(match('hez', ascii)).toEqual({ type: 'none' })
+    expect(match('1998', ascii)).toEqual({ type: 'none' })
+    expect(match('hex', ascii)).toEqual({
+      type: 'exact', canonical: 'hex', rest: '',
+    })
+    expect(match('1999', ascii)).toEqual({
+      type: 'exact', canonical: '1999', rest: '',
+    })
+    // 中文别名仍可拼音模糊
+    expect(match('六人足', ascii)).toEqual({
+      type: 'fuzzy', canonical: '六人组', rest: '',
+    })
+  })
 })
 
 describe('match — 编辑距离与歧义', () => {

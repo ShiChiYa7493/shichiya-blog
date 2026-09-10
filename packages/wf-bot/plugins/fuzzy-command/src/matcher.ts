@@ -80,11 +80,18 @@ function levenshtein(a: string, b: string): number {
   return prev[b.length]
 }
 
+/** 纯拉丁/数字别名（hex、1999、wmi…）不做模糊，避免短串编辑距离误伤聊天。 */
+function isAsciiCommand(text: string): boolean {
+  return /^[a-z0-9]+$/i.test(text)
+}
+
 /**
  * 候选越长，容错越宽。
- * 两字及以下不容错 —— 短词容错会把正常聊天误判成命令。
+ * 两字及以下不容错；纯 ASCII 别名一律零距离（仅精确/前缀命中）。
  */
-function maxDistanceFor(length: number): number {
+function maxDistanceFor(candidate: string): number {
+  if (isAsciiCommand(candidate)) return 0
+  const length = candidate.length
   if (length <= 2) return 0
   if (length <= 5) return 1
   return 2
@@ -131,7 +138,7 @@ export function match(
         levenshtein(inputPinyin, toPinyin(candidate.normalized)),
       ),
     }))
-    .filter((entry) => entry.distance <= maxDistanceFor(entry.candidate.normalized.length))
+    .filter((entry) => entry.distance <= maxDistanceFor(entry.candidate.normalized))
     .sort((a, b) => a.distance - b.distance)
 
   if (!scored.length) return { type: 'none' }

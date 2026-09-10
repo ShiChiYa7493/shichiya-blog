@@ -21,6 +21,7 @@ plugins:
       $in:
         - $: guildId
         - - '915943692'
+          - '1124401223'
     fuzzy-command:pjuh0j: null
     entertainment:jbg13o: null
     warframe:18nqdk: null
