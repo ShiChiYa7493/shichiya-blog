@@ -35,6 +35,10 @@ describe('sqlite persistence', () => {
       guildId: 'g1', bulletChamber: 5, nextChamber: 3,
       updatedAt: new Date('2026-07-29T00:00:00.000Z'),
     })
+    await firstStore.addCosmetic('g1', 'u1', 'title-tenno')
+    const loadout = await firstStore.getLoadout('g1', 'u1')
+    loadout.titleId = 'title-tenno'
+    await firstStore.saveLoadout(loadout)
     await first.stop()
 
     const second = new Context()
@@ -49,6 +53,8 @@ describe('sqlite persistence', () => {
       bulletChamber: 5,
       nextChamber: 3,
     })
+    expect(await secondStore.hasCosmetic('g1', 'u1', 'title-tenno')).toBe(true)
+    expect((await secondStore.getLoadout('g1', 'u1')).titleId).toBe('title-tenno')
     await second.stop()
   })
 })

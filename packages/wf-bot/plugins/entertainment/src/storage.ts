@@ -1,4 +1,5 @@
 import type { Context } from 'koishi'
+import { defaultLoadout, type LoadoutState } from './cosmetics'
 import type { ProfileState } from './game'
 import { defaultProfile } from './game'
 import type { RouletteState } from './roulette'
@@ -42,6 +43,13 @@ export interface TransferRecord {
   createdAt: Date
 }
 
+export interface CosmeticRecord {
+  guildId: string
+  userId: string
+  itemId: string
+  acquiredAt: Date
+}
+
 declare module 'koishi' {
   interface Tables {
     entertainment_profile: ProfileState
@@ -49,6 +57,8 @@ declare module 'koishi' {
     entertainment_inventory: InventoryRecord
     entertainment_transfer: TransferRecord
     entertainment_roulette: RouletteState
+    entertainment_cosmetic: CosmeticRecord
+    entertainment_loadout: LoadoutState
   }
 }
 
@@ -126,6 +136,25 @@ export function extendModels(ctx: Context): void {
     updatedAt: 'timestamp',
   }, {
     primary: 'guildId',
+  })
+
+  ctx.model.extend('entertainment_cosmetic', {
+    guildId: 'string(255)',
+    userId: 'string(255)',
+    itemId: 'string(64)',
+    acquiredAt: 'timestamp',
+  }, {
+    primary: ['guildId', 'userId', 'itemId'],
+  })
+
+  ctx.model.extend('entertainment_loadout', {
+    guildId: 'string(255)',
+    userId: 'string(255)',
+    titleId: 'string(64)',
+    frameId: 'string(64)',
+    backgroundId: 'string(64)',
+  }, {
+    primary: ['guildId', 'userId'],
   })
 }
 
@@ -272,5 +301,31 @@ export class EntertainmentStore {
 
   async saveRouletteState(state: RouletteState): Promise<void> {
     await this.ctx.database.upsert('entertainment_roulette', [{ ...state }], ['guildId'])
+  }
+
+  async listCosmetics(guildId: string, userId: string): Promise<CosmeticRecord[]> {
+    return this.ctx.database.get('entertainment_cosmetic', { guildId, userId })
+  }
+
+  async hasCosmetic(guildId: string, userId: string, itemId: string): Promise<boolean> {
+    const [record] = await this.ctx.database.get('entertainment_cosmetic', { guildId, userId, itemId })
+    return Boolean(record)
+  }
+
+  async addCosmetic(guildId: string, userId: string, itemId: string, acquiredAt = new Date()): Promise<boolean> {
+    if (await this.hasCosmetic(guildId, userId, itemId)) return false
+    await this.ctx.database.upsert('entertainment_cosmetic', [{
+      guildId, userId, itemId, acquiredAt,
+    }], ['guildId', 'userId', 'itemId'])
+    return true
+  }
+
+  async getLoadout(guildId: string, userId: string): Promise<LoadoutState> {
+    const [loadout] = await this.ctx.database.get('entertainment_loadout', { guildId, userId })
+    return loadout ?? defaultLoadout(guildId, userId)
+  }
+
+  async saveLoadout(loadout: LoadoutState): Promise<void> {
+    await this.ctx.database.upsert('entertainment_loadout', [{ ...loadout }], ['guildId', 'userId'])
   }
 }

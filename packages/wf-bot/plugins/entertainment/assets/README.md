@@ -38,3 +38,5 @@
 来源：<https://browse.wf/>（Warframe Public Export 镜像）。素材版权归 Digital Extremes，项目仅作为 Warframe 粉丝机器人使用；如项目公开部署或分发，请按 Digital Extremes 的最新 Fan Content Policy 核对使用范围。
 
 这些资源的路径来自 Warframe Public Export；`browse.wf` 只是便于机器人部署的公开镜像，并非项目自带素材。背景按用户 ID 与日期固定轮换，同一用户当天签到和对战会看到一致的主题。若镜像暂时不可用，插件会自动回退为文字回复，不会阻塞积分或战斗结算。
+
+外观商店的签到背景在 `assets/cosmetics/backgrounds/`，构建时复制到 `lib/assets/cosmetics/backgrounds/`。商店出图使用 `assets/cosmetics/thumbs/` 里最长边 240px、JPEG 压缩后的缩略图。未装备商店背景时仍使用上面的官方图；装备后签到卡改用对应本地图。

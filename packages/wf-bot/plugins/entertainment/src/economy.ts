@@ -1,7 +1,10 @@
+import { renderShopCatalog, toCosmeticShopItems } from './cosmetics'
+
 export type ShopEffect =
   | { type: 'experience', value: number }
   | { type: 'ticket', value: number }
   | { type: 'inventory', itemId: 'power-booster' | 'battle-insurance', value: number }
+  | { type: 'cosmetic', itemId: string }
 
 export interface ShopItem {
   id: string
@@ -53,7 +56,7 @@ export const MAX_DAILY_GIFT_CREDITS = 50
 
 export function findShopItem(raw: string): ShopItem | undefined {
   const normalized = raw.trim().toLowerCase()
-  return SHOP_ITEMS.find((item) =>
+  return [...SHOP_ITEMS, ...toCosmeticShopItems()].find((item) =>
     item.id === normalized
     || item.name.toLowerCase() === normalized
     || item.aliases.some((alias) => alias.toLowerCase() === normalized))
@@ -108,8 +111,5 @@ export function calculateChallengePool(
 }
 
 export function renderShop(discountPercent = 0): string {
-  const discount = discountPercent > 0 ? `\n今日奇遇折扣：${discountPercent}%（首次购买生效）` : ''
-  return `积分商店${discount}\n`
-    + SHOP_ITEMS.map((item) => `${item.name}｜${item.price} 积分｜${item.description}`).join('\n')
-    + '\n购买方式：「购买 商品名 [数量]」'
+  return renderShopCatalog(undefined, discountPercent, new Set(), SHOP_ITEMS)
 }

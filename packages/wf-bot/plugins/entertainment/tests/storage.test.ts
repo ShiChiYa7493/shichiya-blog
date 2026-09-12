@@ -50,6 +50,17 @@ describe('database storage', () => {
     expect((await store.findPendingForTarget('g1', 'u2', now))?.id).toBe(battle.id)
   })
 
+  it('persists owned cosmetics and equipped loadout slots', async () => {
+    expect(await store.addCosmetic('g1', 'u1', 'title-tenno')).toBe(true)
+    expect(await store.addCosmetic('g1', 'u1', 'title-tenno')).toBe(false)
+    expect(await store.hasCosmetic('g1', 'u1', 'title-tenno')).toBe(true)
+    const loadout = await store.getLoadout('g1', 'u1')
+    loadout.titleId = 'title-tenno'
+    await store.saveLoadout(loadout)
+    expect((await store.getLoadout('g1', 'u1')).titleId).toBe('title-tenno')
+    expect((await store.getLoadout('g2', 'u1')).titleId).toBe('')
+  })
+
   it('stores consumable inventory and consumes one item at a time', async () => {
     expect(await store.addItem('g1', 'u1', 'power-booster', 2)).toBe(2)
     expect(await store.consumeItem('g1', 'u1', 'power-booster')).toBe(true)

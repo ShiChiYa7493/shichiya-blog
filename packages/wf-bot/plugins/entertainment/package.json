@@ -7,7 +7,7 @@
   "typings": "lib/index.d.ts",
   "files": ["lib"],
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && node scripts/copy-assets.cjs",
     "test": "vitest run"
   },
   "peerDependencies": {

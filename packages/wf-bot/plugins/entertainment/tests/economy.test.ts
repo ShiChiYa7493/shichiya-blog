@@ -21,10 +21,11 @@ describe('credit shop', () => {
     expect(discountedPrice(item, 2, 20)).toBe(40)
   })
 
-  it('renders every catalog item', () => {
+  it('renders combat items and category hints', () => {
     const output = renderShop(20)
     expect(SHOP_ITEMS.every((item) => output.includes(item.name))).toBe(true)
     expect(output).toContain('20%')
+    expect(output).toContain('积分商店 称号')
   })
 
   it('keeps refunds inside the player-funded battle pool', () => {

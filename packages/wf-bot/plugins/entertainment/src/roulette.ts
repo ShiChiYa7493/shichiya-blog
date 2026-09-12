@@ -1,4 +1,22 @@
 export const ROULETTE_CHAMBERS = 6
+export const ROULETTE_MUTE_DURATION = 30_000
+
+export function createRouletteQueue() {
+  const tails = new Map<string, Promise<unknown>>()
+
+  return {
+    async enqueue<T>(guildId: string, task: () => Promise<T>): Promise<T> {
+      const previous = tails.get(guildId) ?? Promise.resolve()
+      const current = previous.catch(() => undefined).then(task)
+      tails.set(guildId, current)
+      try {
+        return await current
+      } finally {
+        if (tails.get(guildId) === current) tails.delete(guildId)
+      }
+    },
+  }
+}
 
 export interface RouletteState {
   guildId: string

@@ -25,17 +25,35 @@ import { pickRandom, WARFRAMES, WEAPONS } from './items'
 import { BackgroundCache } from './backgrounds'
 import { CardRenderer, type BattleCardData, type CheckinCardData } from './render'
 import {
+  applyEquip,
+  applyUnequip,
+  findCosmetic,
+  parseEquipTarget,
+  parseShopCategory,
+  PREVIEW_ADVENTURE,
+  previewAppearance,
+  renderCosmeticBag,
+  renderPreviewText,
+  renderShopCatalog,
+  splitPurchaseInput,
+} from './cosmetics'
+import {
   MAX_DAILY_GIFT_CREDITS,
   MAX_PURCHASE_QUANTITY,
   MIN_GIFT_CREDITS,
   calculateChallengePool,
   discountedPrice,
   findShopItem,
-  renderShop,
   SHOP_ITEMS,
 } from './economy'
 import { EntertainmentStore, extendModels } from './storage'
-import { ROULETTE_CHAMBERS, playRouletteTurn, type RouletteTurnResult } from './roulette'
+import {
+  ROULETTE_CHAMBERS,
+  ROULETTE_MUTE_DURATION,
+  createRouletteQueue,
+  playRouletteTurn,
+  type RouletteTurnResult,
+} from './roulette'
 import { GENSHIN_MUTE_DURATION, muteGenshinSpeaker } from './genshin-mute'
 
 export const name = 'entertainment'
@@ -125,7 +143,7 @@ export function apply(ctx: Context, config: Config) {
     new BackgroundCache(join(process.cwd(), config.backgroundCacheDir)),
   )
   const battleLocks = new Map<number, Promise<unknown>>()
-  const rouletteLocks = new Map<string, Promise<unknown>>()
+  const rouletteQueue = createRouletteQueue()
   const logger = ctx.logger('entertainment')
 
   async function withBattleLock<T>(battleId: number, task: () => Promise<T>): Promise<T> {
@@ -139,24 +157,13 @@ export function apply(ctx: Context, config: Config) {
     }
   }
 
-  async function withRouletteLock<T>(guildId: string, task: () => Promise<T>): Promise<T> {
-    const previous = rouletteLocks.get(guildId) ?? Promise.resolve()
-    const current = previous.catch(() => undefined).then(task)
-    rouletteLocks.set(guildId, current)
-    try {
-      return await current
-    } finally {
-      if (rouletteLocks.get(guildId) === current) rouletteLocks.delete(guildId)
-    }
-  }
-
   function rouletteMessage(userId: string, result: RouletteTurnResult): string {
     const mention = h.at(userId).toString()
     if (result.status === 'empty') {
       return `咔哒……空枪。\n\n${mention} 逃过一劫，这是第 ${result.shotNumber}/${ROULETTE_CHAMBERS} 枪。`
     }
     if (result.status === 'hit') {
-      return `砰！\n\n${mention} 中弹了，禁言 1 分钟。\n左轮已重新装填。`
+      return `砰！\n\n${mention} 中弹了，禁言 30 秒。\n左轮已重新装填。`
     }
     return `砰！${mention} 中弹了。\n\n但禁言失败：机器人权限不足，或该成员无法被禁言。\n左轮已重新装填。`
   }
@@ -181,6 +188,19 @@ export function apply(ctx: Context, config: Config) {
     }
     return next()
   })
+
+  async function cosmeticFields(guildId: string, userId: string) {
+    const loadout = await store.getLoadout(guildId, userId)
+    const title = findCosmetic(loadout.titleId)
+    const frame = findCosmetic(loadout.frameId)
+    const background = findCosmetic(loadout.backgroundId)
+    return {
+      titleName: title?.name,
+      titleColor: title?.titleColor,
+      frameId: frame?.id,
+      backgroundFile: background?.file,
+    }
+  }
 
   async function renderOrText<T extends CheckinCardData | BattleCardData>(
     data: T,
@@ -382,6 +402,10 @@ export function apply(ctx: Context, config: Config) {
         + `对战券：仅发起者 ${challenger.userId} 消耗 1 张\n`
         + (power.ownScans || power.opponentScans ? '扫描数据已记录，可发送「战术复盘」查看。\n' : '')
         + `MMR：${challenger.userId} ${mmrChange >= 0 ? '+' : ''}${mmrChange}，${target.userId} ${-mmrChange >= 0 ? '+' : ''}${-mmrChange}`
+      const [challengerLook, targetLook] = await Promise.all([
+        cosmeticFields(guildId, challenger.userId),
+        cosmeticFields(guildId, target.userId),
+      ])
       return renderOrText({
         battleId: battle.id,
         challengerId: challenger.userId,
@@ -408,6 +432,12 @@ export function apply(ctx: Context, config: Config) {
         targetMmrChange: -mmrChange,
         backgroundUserId: challenger.userId,
         date: today,
+        challengerTitle: challengerLook.titleName,
+        targetTitle: targetLook.titleName,
+        challengerTitleColor: challengerLook.titleColor,
+        targetTitleColor: targetLook.titleColor,
+        challengerFrameId: challengerLook.frameId,
+        targetFrameId: targetLook.frameId,
       }, text)
     })
   }
@@ -437,12 +467,12 @@ export function apply(ctx: Context, config: Config) {
       if (!session.guildId) return '“射爆”仅限群聊使用。'
       if (!session.userId) return '无法识别你的用户账号。'
 
-      return withRouletteLock(session.guildId, async () => {
+      return rouletteQueue.enqueue(session.guildId, async () => {
         const result = await playRouletteTurn({
           store,
           guildId: session.guildId!,
           randomChamber: () => randomInt(ROULETTE_CHAMBERS),
-          mute: () => session.bot.muteGuildMember(session.guildId!, session.userId!, 60_000),
+          mute: () => session.bot.muteGuildMember(session.guildId!, session.userId!, ROULETTE_MUTE_DURATION),
         })
         if (result.status === 'mute-failed') {
           logger.warn('roulette mute failed for guild=%s user=%s: %s',
@@ -487,6 +517,7 @@ export function apply(ctx: Context, config: Config) {
           fortuneText: fortune.text,
           fortuneAxes: fortune.axes,
           fortuneAdvice: fortune.advice,
+          ...(await cosmeticFields(identity.guildId, identity.userId)),
         }, text)
       }
 
@@ -525,6 +556,7 @@ export function apply(ctx: Context, config: Config) {
         fortuneText: fortune.text,
         fortuneAxes: fortune.axes,
         fortuneAdvice: fortune.advice,
+        ...(await cosmeticFields(identity.guildId, identity.userId)),
       }, text)
     })
 
@@ -537,7 +569,8 @@ export function apply(ctx: Context, config: Config) {
       const profile = await store.getProfile(identity.guildId, identity.userId)
       resetDailyBattleCount(profile, today)
       const adventure = getAdventure(profile.dailyAdventureId)
-      return `用户：${identity.userId}\n`
+      const look = await cosmeticFields(identity.guildId, identity.userId)
+      return `用户：${look.titleName ? `【${look.titleName}】` : ''}${identity.userId}\n`
         + `等级：${profile.level}｜经验：${profile.experience}\n`
         + `积分：${profile.credits}｜战斗力：${baseCombatPower(profile)}｜MMR：${profile.mmr}\n`
         + `战绩：${profile.wins} 胜 ${profile.losses} 负｜当前连胜：${profile.winStreak}\n`
@@ -649,26 +682,78 @@ export function apply(ctx: Context, config: Config) {
         + `胜者：${battle.winnerId}｜挑战者 MMR 变化：${battle.mmrChange >= 0 ? '+' : ''}${battle.mmrChange}`
     })
 
-  ctx.command('积分商店', '查看可购买的积分商品')
+  ctx.command('积分商店 [category:string]', '查看可购买的积分商品')
     .alias('商店')
-    .action(async ({ session }) => {
+    .action(async ({ session }, category) => {
       const identity = identify(session)
       if (typeof identity === 'string') return identity
+      const parsed = parseShopCategory(category)
+      if (category && !parsed) return '可查看：积分商店 称号 / 边框 / 背景 / 道具'
       const today = dateKey(new Date(), config.timeZone)
-      const profile = await store.getProfile(identity.guildId, identity.userId)
+      const [profile, owned] = await Promise.all([
+        store.getProfile(identity.guildId, identity.userId),
+        store.listCosmetics(identity.guildId, identity.userId),
+      ])
       const adventure = activeShopAdventure(profile, today)
       const discount = adventure ? effectValue(adventure.effects, 'shop-discount') : 0
-      return `${renderShop(discount)}\n当前积分：${profile.credits}`
+      const ownedIds = owned.map((record) => record.itemId)
+      const text = `${renderShopCatalog(parsed, discount, new Set(ownedIds), SHOP_ITEMS)}\n当前积分：${profile.credits}`
+      if (!parsed || parsed === 'consumable' || !config.renderImages) return text
+      const image = await renderer.shop({
+        category: parsed,
+        discountPercent: discount,
+        credits: profile.credits,
+        ownedIds,
+      })
+      return image ?? text
     })
 
-  ctx.command('购买 <item:string> [quantity:number]', '购买积分商店商品')
-    .action(async ({ session }, rawItem, rawQuantity) => {
+  ctx.command('预览 <item:text>', '预览商店外观在签到卡上的效果')
+    .alias('商店预览')
+    .action(async ({ session }, rawItem) => {
+      const identity = identify(session)
+      if (typeof identity === 'string') return identity
+      if (!rawItem) return '请使用「预览 商品名」，例如「预览 天台晚风少女」。'
+      const cosmetic = findCosmetic(rawItem.trim())
+      if (!cosmetic) return `没有找到外观「${rawItem.trim()}」，请发送「积分商店 称号 / 边框 / 背景」查看。`
+      const now = new Date()
+      const today = dateKey(now, config.timeZone)
+      const profile = await store.getProfile(identity.guildId, identity.userId)
+      const fortune = getDailyFortune(identity.userId, now, config.timeZone)
+      const kind = cosmetic.slot === 'title' ? '称号' : cosmetic.slot === 'frame' ? '边框' : '签到背景'
+      return renderOrText({
+        userId: identity.userId,
+        avatarUrl: avatarFromSession(session, identity.userId),
+        date: today,
+        already: false,
+        gained: 0,
+        randomReward: profile.dailyRandom,
+        streak: profile.streak,
+        credits: profile.credits,
+        level: profile.level,
+        battlePower: baseCombatPower(profile),
+        tickets: profile.tickets,
+        adventure: PREVIEW_ADVENTURE,
+        adventureUsed: true,
+        fortuneLevel: fortune.level,
+        fortuneScore: fortune.score,
+        fortuneText: fortune.text,
+        fortuneAxes: fortune.axes,
+        fortuneAdvice: fortune.advice,
+        headline: '外观预览',
+        subhead: `${kind} · ${cosmetic.price} 积分`,
+        ...previewAppearance(cosmetic),
+      }, renderPreviewText(cosmetic))
+    })
+
+  ctx.command('购买 <item:text>', '购买积分商店商品')
+    .action(async ({ session }, rawItem) => {
       const identity = identify(session)
       if (typeof identity === 'string') return identity
       if (!rawItem) return '请使用「购买 商品名 [数量]」。'
-      const item = findShopItem(rawItem)
-      if (!item) return `没有找到「${rawItem}」，请发送「积分商店」查看商品。`
-      const quantity = Math.floor(rawQuantity ?? 1)
+      const { query, quantity } = splitPurchaseInput(rawItem)
+      const item = findShopItem(query)
+      if (!item) return `没有找到「${query}」，请发送「积分商店」查看商品。`
       if (quantity < 1 || quantity > MAX_PURCHASE_QUANTITY) {
         return `单次购买数量必须在 1～${MAX_PURCHASE_QUANTITY} 之间。`
       }
@@ -682,6 +767,24 @@ export function apply(ctx: Context, config: Config) {
         if (profile.credits < price) return `积分不足，需要 ${price}，当前只有 ${profile.credits}。`
         if (item.effect.type === 'ticket' && profile.tickets + item.effect.value * quantity > MAX_TICKETS) {
           return `购买后会超过 ${MAX_TICKETS} 张对战券上限，请减少数量。`
+        }
+        if (item.effect.type === 'cosmetic') {
+          if (quantity !== 1) return '外观每次只能购买 1 件。'
+          const cosmetic = findCosmetic(item.effect.itemId)
+          if (!cosmetic) return '外观数据异常。'
+          if (!await transaction.addCosmetic(identity.guildId, identity.userId, cosmetic.id)) {
+            return `你已经拥有「${item.name}」。`
+          }
+          profile.credits -= price
+          const loadout = applyEquip(
+            await transaction.getLoadout(identity.guildId, identity.userId),
+            cosmetic,
+          )
+          await transaction.saveLoadout(loadout)
+          if (adventure && discount > 0) profile.dailyAdventureUsed = true
+          await transaction.saveProfile(profile)
+          return `购买成功：${item.name} ×1｜消耗 ${price} 积分${discount ? `（奇遇八折）` : ''}\n`
+            + `已装备「${cosmetic.name}」｜剩余积分 ${profile.credits}`
         }
 
         profile.credits -= price
@@ -708,16 +811,51 @@ export function apply(ctx: Context, config: Config) {
       })
     })
 
-  ctx.command('背包', '查看积分商店购买的战斗道具')
+  ctx.command('背包', '查看积分商店购买的战斗道具和外观')
     .alias('我的道具')
     .action(async ({ session }) => {
       const identity = identify(session)
       if (typeof identity === 'string') return identity
-      const inventory = await store.getInventory(identity.guildId, identity.userId)
-      if (!inventory.length) return '背包是空的，可以发送「积分商店」购买道具。'
+      const [inventory, ownedRecords, loadout] = await Promise.all([
+        store.getInventory(identity.guildId, identity.userId),
+        store.listCosmetics(identity.guildId, identity.userId),
+        store.getLoadout(identity.guildId, identity.userId),
+      ])
+      const owned = ownedRecords
+        .map((record) => findCosmetic(record.itemId))
+        .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      if (!inventory.length && !owned.length) {
+        return '背包是空的，可以发送「积分商店」购买道具或外观。'
+      }
       const names = new Map(SHOP_ITEMS.map((item) => [item.id, item.name]))
-      return `我的背包\n${inventory.map((record) =>
-        `${names.get(record.itemId) ?? record.itemId} ×${record.quantity}`).join('\n')}`
+      const combat = inventory.length
+        ? inventory.map((record) => `${names.get(record.itemId) ?? record.itemId} ×${record.quantity}`).join('\n')
+        : '暂无'
+      return `我的背包\n\n战斗道具\n${combat}\n\n${renderCosmeticBag(owned, loadout)}`
+    })
+
+  ctx.command('装备 <item:text>', '装备已拥有的外观，或卸下为默认')
+    .action(async ({ session }, rawItem) => {
+      const identity = identify(session)
+      if (typeof identity === 'string') return identity
+      const target = parseEquipTarget(rawItem ?? '')
+      if (!target) return '请使用「装备 名称」或「装备 默认称号」。'
+      if (target.type === 'default') {
+        const loadout = applyUnequip(await store.getLoadout(identity.guildId, identity.userId), target.slot)
+        await store.saveLoadout(loadout)
+        const label = target.slot === 'title' ? '称号' : target.slot === 'frame' ? '边框' : '背景'
+        return `已卸下${label}，恢复默认。`
+      }
+      const cosmetic = findCosmetic(target.query)
+      if (!cosmetic) return `没有找到「${target.query}」。`
+      if (!await store.hasCosmetic(identity.guildId, identity.userId, cosmetic.id)) {
+        return `你还没有「${cosmetic.name}」，请先发送「积分商店」购买。`
+      }
+      await store.saveLoadout(applyEquip(
+        await store.getLoadout(identity.guildId, identity.userId),
+        cosmetic,
+      ))
+      return `已装备「${cosmetic.name}」。`
     })
 
   ctx.command('赠送 <target:string> <amount:number>', '向今日已签到的群友赠送积分')
@@ -769,7 +907,11 @@ export function apply(ctx: Context, config: Config) {
         .sort((left, right) => right.credits - left.credits)
       const top = profiles.slice(0, 10)
       const ownRank = profiles.findIndex((profile) => profile.userId === identity.userId) + 1
-      return `本群积分排行榜\n${top.map((profile, index) => `${index + 1}. ${profile.userId}｜${profile.credits} 分`).join('\n')}`
+      const titled = await Promise.all(top.map(async (profile) => {
+        const look = await cosmeticFields(identity.guildId, profile.userId)
+        return `${look.titleName ? `【${look.titleName}】` : ''}${profile.userId}｜${profile.credits} 分`
+      }))
+      return `本群积分排行榜\n${titled.map((line, index) => `${index + 1}. ${line}`).join('\n')}`
         + (ownRank > 10 ? `\n你的排名：${ownRank}` : '')
     })
 
@@ -780,8 +922,11 @@ export function apply(ctx: Context, config: Config) {
       const profiles = (await store.listProfiles(identity.guildId))
         .sort((left, right) => right.mmr - left.mmr)
         .slice(0, 10)
-      return `本群对战排行榜\n${profiles.map((profile, index) =>
-        `${index + 1}. ${profile.userId}｜MMR ${profile.mmr}｜${profile.wins}胜${profile.losses}负`).join('\n')}`
+      const titled = await Promise.all(profiles.map(async (profile) => {
+        const look = await cosmeticFields(identity.guildId, profile.userId)
+        return `${look.titleName ? `【${look.titleName}】` : ''}${profile.userId}｜MMR ${profile.mmr}｜${profile.wins}胜${profile.losses}负`
+      }))
+      return `本群对战排行榜\n${titled.map((line, index) => `${index + 1}. ${line}`).join('\n')}`
     })
 }
 
@@ -805,7 +950,18 @@ export {
   SHOP_ITEMS,
 } from './economy'
 export {
+  COSMETICS,
+  applyEquip,
+  defaultLoadout,
+  findCosmetic,
+  parseEquipTarget,
+  parseShopCategory,
+  splitPurchaseInput,
+} from './cosmetics'
+export {
   ROULETTE_CHAMBERS,
+  ROULETTE_MUTE_DURATION,
+  createRouletteQueue,
   createRouletteState,
   playRouletteTurn,
   pullRouletteTrigger,

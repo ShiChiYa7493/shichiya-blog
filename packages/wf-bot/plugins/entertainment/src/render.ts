@@ -1,6 +1,14 @@
 import { h, type Context, type Fragment } from 'koishi'
 import type { Adventure } from './adventures'
 import { BackgroundCache, pickBackground } from './backgrounds'
+import {
+  COSMETICS,
+  findCosmetic,
+  loadCosmeticBackgroundFile,
+  loadCosmeticThumbnail,
+  shopCatalogTiles,
+  type CosmeticSlot,
+} from './cosmetics'
 import type { FortuneAxis } from './fortune'
 import { escapeXml } from './xml'
 
@@ -37,6 +45,12 @@ export interface CheckinCardData {
   fortuneText: string
   fortuneAxes?: readonly FortuneAxis[]
   fortuneAdvice?: string
+  titleName?: string
+  titleColor?: string
+  frameId?: string
+  backgroundFile?: string
+  headline?: string
+  subhead?: string
 }
 
 export interface BattleCardData {
@@ -65,6 +79,19 @@ export interface BattleCardData {
   targetMmrChange: number
   backgroundUserId: string
   date: string
+  challengerTitle?: string
+  targetTitle?: string
+  challengerTitleColor?: string
+  targetTitleColor?: string
+  challengerFrameId?: string
+  targetFrameId?: string
+}
+
+export interface ShopCatalogCardData {
+  category: CosmeticSlot
+  discountPercent: number
+  credits: number
+  ownedIds: readonly string[]
 }
 
 export interface CardRendererOptions {
@@ -86,7 +113,11 @@ export class CardRenderer {
   }
 
   async checkin(data: CheckinCardData): Promise<Fragment | undefined> {
-    const background = await this.backgrounds.get(pickBackground(data.userId, data.date, data.adventure.id))
+    const equipped = data.backgroundFile
+      ? await loadCosmeticBackgroundFile(data.backgroundFile)
+      : undefined
+    const background = equipped
+      ?? await this.backgrounds.get(pickBackground(data.userId, data.date, data.adventure.id))
     if (!background || !this.ctx.puppeteer) return undefined
     const svg = this.checkinSvg(data, background)
     return this.renderSvg(svg)
@@ -100,6 +131,19 @@ export class CardRenderer {
     if (!background || !this.ctx.puppeteer) return undefined
     const svg = this.battleSvg(data, background)
     return this.renderSvg(svg)
+  }
+
+  async shop(data: ShopCatalogCardData): Promise<Fragment | undefined> {
+    if (!this.ctx.puppeteer) return undefined
+    const items = COSMETICS.filter((item) => item.slot === data.category)
+    const thumbs = Object.fromEntries(
+      (await Promise.all(items.map(async (item) => {
+        if (!item.file) return
+        const uri = await loadCosmeticThumbnail(item.file)
+        return uri ? [item.id, uri] as const : undefined
+      }))).filter((entry): entry is readonly [string, string] => Boolean(entry)),
+    )
+    return this.renderSvg(this.shopSvg(data, items, thumbs))
   }
 
   private async renderSvg(svg: string): Promise<Fragment | undefined> {
@@ -126,18 +170,20 @@ export class CardRenderer {
       : data.adventure.trigger === 'battle'
         ? '首次对战时生效'
         : data.adventure.trigger === 'shop' ? '首次购买时生效' : '签到时生效'
-    const title = data.already ? '今日已签到' : '签到成功'
+    const title = data.headline ?? (data.already ? '今日已签到' : '签到成功')
+    const reward = data.subhead ?? (data.already ? '今日奖励已领取' : `+${data.gained} 积分`)
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${this.width}" height="${this.height}" viewBox="0 0 ${this.width} ${this.height}">
       <defs>
         <clipPath id="checkin-avatar"><circle cx="126" cy="112" r="48"/></clipPath>
       </defs>
       ${this.background(background)}
-      ${this.themeFrame(data.adventure.id)}
+      ${this.themeFrame(data.adventure.id, data.frameId)}
       ${this.panel(34, 34, 778, 686, 'rgba(5,11,19,.84)')}
       ${this.avatar(data.avatarUrl, data.userId)}
-      ${this.textLines('UID  ' + data.userId, 194, 88, 21, '#d8e8ed', 29, 520, 1, 700)}
+      ${this.textLines('UID  ' + data.userId, 194, 88, 21, '#d8e8ed', 29, 360, 1, 700)}
+      ${data.titleName ? this.text(`【${data.titleName}】`, 738, 88, 20, data.titleColor ?? '#ffcf69', 700, 'end') : ''}
       ${this.text(title, 194, 145, 46, data.already ? '#a6b8c0' : '#f5bd42', 800)}
-      ${this.text(data.already ? '今日奖励已领取' : `+${data.gained} 积分`, 194, 186, 26, '#ffffff', 700)}
+      ${this.text(reward, 194, 186, 26, '#ffffff', 700)}
       ${this.line(74, 218, 738, 218)}
       ${this.sectionTitle('签到信息', 74, 260, 664)}
       ${this.badge('签到日期', data.date, 74, 304, 112)}
@@ -175,13 +221,13 @@ export class CardRenderer {
         <clipPath id="battle-avatar-target"><circle cx="768" cy="357" r="39"/></clipPath>
       </defs>
       ${this.background(background)}
-      ${this.themeFrame(themeAdventureId)}
+      ${this.themeFrame(themeAdventureId, data.challengerFrameId)}
       ${this.panel(34, 34, 1246, 686, 'rgba(5,11,19,.86)')}
       ${this.text(`对战 #${data.battleId}`, 76, 91, 22, '#a9c6d0', 700)}
       ${this.text('DUEL RESULT', 76, 137, 18, '#9bb3c7', 700)}
       ${this.text(data.winnerId === data.challengerId ? '发起方胜利' : '被挑战方胜利', 76, 202, 48, '#f5bd42', 800)}
-      ${this.cardUser('发起方', data.challengerId, data.challengerAvatarUrl, data.challengerPower, data.challengerAdventureBonus, data.challengerItemBonus, data.challengerExperience, 76, 267, challengerColor, 'battle-avatar-challenger')}
-      ${this.cardUser('被挑战方', data.targetId, data.targetAvatarUrl, data.targetPower, data.targetAdventureBonus, data.targetItemBonus, data.targetExperience, 700, 267, targetColor, 'battle-avatar-target')}
+      ${this.cardUser('发起方', data.challengerId, data.challengerAvatarUrl, data.challengerPower, data.challengerAdventureBonus, data.challengerItemBonus, data.challengerExperience, 76, 267, challengerColor, 'battle-avatar-challenger', data.challengerTitle, data.challengerTitleColor)}
+      ${this.cardUser('被挑战方', data.targetId, data.targetAvatarUrl, data.targetPower, data.targetAdventureBonus, data.targetItemBonus, data.targetExperience, 700, 267, targetColor, 'battle-avatar-target', data.targetTitle, data.targetTitleColor)}
       ${this.text('VS', 614, 385, 42, '#d6a3ff', 800)}
       ${this.line(76, 507, 1190, 507)}
       ${this.badge('发起消耗', `${data.challengerStake}`, 76, 549)}
@@ -191,6 +237,53 @@ export class CardRenderer {
       ${this.text(`挑战者胜率 ${Math.round(data.challengerChance * 100)}%`, 76, 600, 17, '#a9c6d0', 500)}
       ${this.text(`MMR  ${data.challengerId} ${data.challengerMmrChange >= 0 ? '+' : ''}${data.challengerMmrChange}   ${data.targetId} ${data.targetMmrChange >= 0 ? '+' : ''}${data.targetMmrChange}`, 76, 646, 18, '#b9cbd1', 500)}
     </svg>`
+  }
+
+  private shopSvg(
+    data: ShopCatalogCardData,
+    items: typeof COSMETICS[number][],
+    thumbs: Record<string, string>,
+  ): string {
+    const labels: Record<CosmeticSlot, string> = { title: '称号', frame: '边框', background: '背景' }
+    const owned = new Set(data.ownedIds)
+    const tiles = shopCatalogTiles(items)
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${this.width}" height="${this.height}" viewBox="0 0 ${this.width} ${this.height}">
+      <rect width="100%" height="100%" fill="#071018"/>
+      ${this.text(`积分商店｜${labels[data.category]}`, 48, 48, 32, '#ffffff', 800)}
+      ${data.discountPercent > 0
+        ? this.text(`今日奇遇八折 · 当前积分 ${data.credits}`, 48, 78, 16, '#d6a3ff', 500)
+        : this.text(`当前积分 ${data.credits} · 预览「预览 名称」 · 购买「购买 名称」`, 48, 78, 16, '#a9c6d0', 500)}
+      ${tiles.map((tile) => this.shopTile(tile.item, tile.x, tile.y, tile.width, tile.height, thumbs[tile.item.id], owned.has(tile.item.id))).join('')}
+    </svg>`
+  }
+
+  private shopTile(
+    item: typeof COSMETICS[number],
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    thumb: string | undefined,
+    owned: boolean,
+  ): string {
+    const clipId = `shop-${item.id}`
+    const imageHeight = item.slot === 'background' ? height - 32 : height
+    const frame = item.frame
+    return `<defs><clipPath id="${clipId}"><rect x="${x}" y="${y}" width="${width}" height="${imageHeight}" rx="10"/></clipPath></defs>
+      <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="12" fill="rgba(17,30,42,.92)" stroke="${owned ? '#f5bd42' : 'rgba(145,188,205,.28)'}" stroke-width="2"/>
+      ${item.slot === 'background' && thumb
+        ? `<image href="${thumb}" x="${x}" y="${y}" width="${width}" height="${imageHeight}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId})"/>`
+        : ''}
+      ${item.slot === 'title'
+        ? `${this.panel(x + 16, y + 18, x + width - 16, y + height - 42, 'rgba(8,12,24,.9)')}
+           ${this.text(`【${item.name}】`, x + width / 2, y + height / 2 - 6, 26, item.titleColor ?? '#ffcf69', 800, 'middle')}`
+        : ''}
+      ${item.slot === 'frame' && frame
+        ? `<rect x="${x + 18}" y="${y + 16}" width="${width - 36}" height="${height - 48}" rx="10" fill="none" stroke="${frame.stroke}" stroke-width="${Math.max(3, frame.strokeWidth)}"/>
+           ${frame.innerStroke ? `<rect x="${x + 26}" y="${y + 24}" width="${width - 52}" height="${height - 64}" rx="8" fill="none" stroke="${frame.innerStroke}" stroke-width="2"/>` : ''}
+           ${this.text(item.name, x + width / 2, y + height / 2, 16, '#dce9ec', 700, 'middle')}`
+        : ''}
+      ${this.text(`${item.name}  ${item.price}积分${owned ? '  已拥有' : ''}`, x + 10, y + height - 10, 13, owned ? '#f5bd42' : '#dce9ec', 600)}`
   }
 
   private cardUser(
@@ -205,24 +298,37 @@ export class CardRenderer {
     y: number,
     color: string,
     clipId: string,
+    title?: string,
+    titleColor?: string,
   ): string {
     return `${this.panel(x, y, x + 460, y + 180, 'rgba(17,30,42,.88)')}
       ${this.avatarAt(avatarUrl, userId, x + 68, y + 90, 39, clipId)}
       ${this.text(role, x + 124, y + 29, 14, '#99b4bf', 600)}
       ${this.text(userId, x + 124, y + 57, 21, color, 700)}
+      ${title ? this.text(`【${title}】`, x + 124, y + 80, 14, titleColor ?? '#ffcf69', 700) : ''}
       ${this.text(`${power}`, x + 124, y + 127, 50, '#ffffff', 800)}
       ${this.text(`奇遇 ${bonus >= 0 ? '+' : ''}${bonus}｜道具 +${itemBonus}`, x + 255, y + 86, 16, '#a9c6d0', 500)}
       ${this.text(`经验 +${experience}`, x + 255, y + 124, 17, '#dce9ec', 600)}`
   }
 
-  private themeFrame(adventureId: string): string {
+  private themeFrame(adventureId: string, frameId?: string): string {
+    const theme = frameId ? findCosmetic(frameId)?.frame : undefined
+    const parts: string[] = []
+    if (theme) {
+      parts.push(`<rect x="13" y="13" width="${this.width - 26}" height="${this.height - 26}" rx="24" fill="none" stroke="${theme.stroke}" stroke-width="${theme.strokeWidth}" opacity=".95"/>`)
+      if (theme.innerStroke) {
+        parts.push(`<rect x="22" y="22" width="${this.width - 44}" height="${this.height - 44}" rx="20" fill="none" stroke="${theme.innerStroke}" stroke-width="2" opacity=".9"/>`)
+      }
+    }
+    const inset = theme ? 28 : 13
+    const strokeWidth = theme ? 3 : 4
     if (adventureId === 'lotus-gaze') {
-      return `<rect x="13" y="13" width="${this.width - 26}" height="${this.height - 26}" rx="24" fill="none" stroke="#d6a3ff" stroke-width="4" opacity=".9"/>`
+      parts.push(`<rect x="${inset}" y="${inset}" width="${this.width - inset * 2}" height="${this.height - inset * 2}" rx="18" fill="none" stroke="#d6a3ff" stroke-width="${strokeWidth}" opacity=".9"/>`)
     }
     if (adventureId === 'void-echo') {
-      return `<rect x="13" y="13" width="${this.width - 26}" height="${this.height - 26}" rx="24" fill="none" stroke="#8fe7ef" stroke-width="4" opacity=".9"/>`
+      parts.push(`<rect x="${inset}" y="${inset}" width="${this.width - inset * 2}" height="${this.height - inset * 2}" rx="18" fill="none" stroke="#8fe7ef" stroke-width="${strokeWidth}" opacity=".9"/>`)
     }
-    return ''
+    return parts.join('')
   }
 
   private background(dataUri: string): string {
