@@ -145,4 +145,27 @@ describe('match — 编辑距离与歧义', () => {
   it('差太远仍返回 none', () => {
     expect(match('晚饭', CANDIDATES)).toEqual({ type: 'none' })
   })
+
+  it('蹲圣所赏金 在订阅别名存在时不会被改写成赏金查询', () => {
+    const candidates: Candidate[] = [
+      { canonical: '圣所赏金', normalized: '圣所赏金', command: 'bounty-cavia' },
+      { canonical: '科维兽', normalized: '科维兽', command: 'bounty-cavia' },
+      { canonical: '蹲圣所赏金', normalized: '蹲圣所赏金', command: 'watch' },
+      { canonical: '蹲科维兽', normalized: '蹲科维兽', command: 'watch' },
+      { canonical: '查圣所', normalized: '查圣所', command: 'watch-query' },
+      { canonical: '删圣所', normalized: '删圣所', command: 'watch-remove' },
+    ]
+    expect(match('蹲圣所赏金', candidates)).toEqual({
+      type: 'exact', canonical: '蹲圣所赏金', rest: '',
+    })
+    expect(match('蹲科维兽', candidates)).toEqual({
+      type: 'exact', canonical: '蹲科维兽', rest: '',
+    })
+    expect(match('查圣所', candidates)).toEqual({
+      type: 'exact', canonical: '查圣所', rest: '',
+    })
+    expect(match('删圣所 全部', candidates)).toEqual({
+      type: 'exact', canonical: '删圣所', rest: '全部',
+    })
+  })
 })
