@@ -34,9 +34,10 @@ function splitByPrefix(input: string, candidates: Candidate[]) {
     const rest = remainder.trim()
     const separated = rest === '' || remainder !== rest
 
-    // 无空格粘连时，剩余部分必须含字母或数字（如 后纪a2）才认——
-    // 否则 `遗物是什么` 这类以命令名开头的正常聊天会被误判成命令。
-    if (!separated && !/[a-z0-9]/.test(rest)) continue
+    // 无空格粘连时，剩余部分必须从参数形态起头：数字（仲裁5）、
+    // 字母数字（h2）、或遗物纪元（后纪a2）。`仲裁是5黄喵` 这种
+    // 先插入中文闲聊再夹数字的句子不当成命令。
+    if (!separated && !/^(?:[a-z0-9]|[古前中后]纪?[a-z0-9])/i.test(rest)) continue
 
     if (best && candidate.normalized.length <= best.candidate.normalized.length) continue
     best = { candidate, rest, separated }

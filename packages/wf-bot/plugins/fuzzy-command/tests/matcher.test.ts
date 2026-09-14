@@ -51,6 +51,22 @@ describe('match — 精确与切分', () => {
     // 真实参数形态必含字母数字（后纪a2 / 前纪b3），聊天不会。
     expect(match('遗物是什么', CANDIDATES)).toEqual({ type: 'none' })
   })
+
+  it('命令后夹数字的中文闲聊不当成粘连参数', () => {
+    const candidates: Candidate[] = [
+      ...CANDIDATES,
+      { canonical: '仲裁', normalized: '仲裁', command: 'arbitration' },
+      { canonical: '仲裁表', normalized: '仲裁表', command: 'arbitration' },
+    ]
+    expect(match('仲裁是5黄喵', candidates)).toEqual({ type: 'none' })
+    expect(match('仲裁怎么样', candidates)).toEqual({ type: 'none' })
+    expect(match('仲裁5', candidates)).toEqual({
+      type: 'fuzzy', canonical: '仲裁', rest: '5',
+    })
+    expect(match('仲裁 5', candidates)).toEqual({
+      type: 'exact', canonical: '仲裁', rest: '5',
+    })
+  })
 })
 
 describe('match — 拼音模糊', () => {
