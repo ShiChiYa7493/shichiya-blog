@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue)](./LICENSE)
 [![备案](https://img.shields.io/badge/ICP-蜀ICP备2026017856号-lightgrey)](https://beian.miit.gov.cn/)
 
-优川七夜的个人博客。前端和后端是本仓库的子模块，Warframe QQ 机器人在独立仓库 [warframe-bot](https://github.com/ShiChiYa7493/warframe-bot)。
+优川七夜的个人博客。前端和后端是本仓库的子模块。
 
 ---
 
@@ -36,12 +36,10 @@ shichiya-blog/
 │   └── server/                      子模块 blog-server（NestJS，端口 3001）
 ├── uploads/                         上传文件（Nginx 直接 alias）
 ├── docs/                            运维、开发流程与专题研究
-├── scripts/                         部署及 OneBot 辅助脚本
+├── scripts/                         部署脚本
 ├── ecosystem.config.js              PM2 配置
 └── nginx.conf.example               Nginx 反代示例
 ```
-
-Warframe QQ 机器人：[ShiChiYa7493/warframe-bot](https://github.com/ShiChiYa7493/warframe-bot)。它不是本仓库的子模块。
 
 ## 🚀 快速开始
 
@@ -90,8 +88,6 @@ cd ~/shichiya-blog && npm run deploy
 ```
 
 `npm run deploy` 等价于：`git pull → 更新子模块 → npm install → npm run db:migrate → npm run build → pm2 reload --update-env`。
-
-机器人在独立仓库 [warframe-bot](https://github.com/ShiChiYa7493/warframe-bot) 里开发和发布。本仓库的 `scripts/deploy-wf-bot.sh` 已停用。
 
 ### npm 脚本一览
 
