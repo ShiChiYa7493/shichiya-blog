@@ -1,0 +1,8 @@
+[submodule "packages/frontend"]
+	path = packages/frontend
+	url = https://github.com/ShiChiYa7493/blog-frontend.git
+	branch = main
+[submodule "packages/server"]
+	path = packages/server
+	url = https://github.com/ShiChiYa7493/blog-server.git
+	branch = main

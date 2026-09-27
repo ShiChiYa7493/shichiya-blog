@@ -6,7 +6,7 @@
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue)](./LICENSE)
 [![备案](https://img.shields.io/badge/ICP-蜀ICP备2026017856号-lightgrey)](https://beian.miit.gov.cn/)
 
-优川七夜的个人博客与 Warframe QQ 机器人 —— 一个前后端分离的 monorepo，包含后台管理、图床和独立 Koishi bot。
+优川七夜的个人博客。前端和后端是本仓库的子模块，Warframe QQ 机器人在独立仓库 [warframe-bot](https://github.com/ShiChiYa7493/warframe-bot)。
 
 ---
 
@@ -34,22 +34,16 @@
 ```
 shichiya-blog/
 ├── packages/
-│   ├── frontend/                    Next.js 应用（端口 3000）
-│   │   └── src/app/
-│   │       ├── blog/                博客前台
-│   │       └── admin/               后台管理
-│   ├── server/                      NestJS 应用（端口 3001）
-│   │   ├── src/modules/             业务模块
-│   │   │   └── article / auth / category / tag / comment /
-│   │   │       gallery / gallery-category / stats / upload
-│   │   └── prisma/                  schema、迁移、seed
-│   └── wf-bot/                      Warframe QQ 机器人（Koishi + NapCat）
+│   ├── frontend/                    子模块 blog-frontend（Next.js，端口 3000）
+│   └── server/                      子模块 blog-server（NestJS，端口 3001）
 ├── uploads/                         上传文件（Nginx 直接 alias）
 ├── docs/                            运维、开发流程与专题研究
 ├── scripts/                         部署及 OneBot 辅助脚本
 ├── ecosystem.config.js              PM2 配置
 └── nginx.conf.example               Nginx 反代示例
 ```
+
+Warframe QQ 机器人：[ShiChiYa7493/warframe-bot](https://github.com/ShiChiYa7493/warframe-bot)。它不是本仓库的子模块。
 
 ## 🚀 快速开始
 
@@ -62,10 +56,9 @@ shichiya-blog/
 
 ```bash
 # 1. 拉取代码 & 装依赖
-git clone https://github.com/ShiChiYa7493/shichiya-blog.git
+git clone --recurse-submodules https://github.com/ShiChiYa7493/shichiya-blog.git
 cd shichiya-blog
 npm install
-npm --prefix packages/wf-bot install
 
 # 2. 配置环境变量
 cp packages/server/.env.example   packages/server/.env
@@ -98,15 +91,9 @@ npm run dev:frontend   # 前端 → http://localhost:3000
 cd ~/shichiya-blog && npm run deploy
 ```
 
-`npm run deploy` 等价于：`git pull → npm install → 安装 bot 依赖 → npm run db:migrate → npm run build → pm2 reload --update-env`。
+`npm run deploy` 等价于：`git pull → 更新子模块 → npm install → npm run db:migrate → npm run build → pm2 reload --update-env`。
 
-机器人从本地验证并发布时，使用专用命令并提供本次更新内容：
-
-```bash
-npm run deploy:bot -- --notice "订阅提醒支持更多任务类型，并改为每分钟检测"
-```
-
-该命令会依次运行 Warframe 插件全量测试和 Node 22 构建，通过一条复用的 SSH 主连接同步并校验两个线上目录，重启 `blog-bot`，等待服务监听成功、检查新增错误日志，最后通过 OneBot 只向好友 QQ `1071342037` 发送更新公告，不向任何群发送。默认发布必须提供 `--notice`；只有显式使用 `--skip-notice` 才会跳过公告。收到私聊动作回执后发布命令才会成功退出；可追加 `--dry-run` 仅检查参数和发布目标。
+机器人的发布在 [warframe-bot](https://github.com/ShiChiYa7493/warframe-bot) 里进行，不从本仓库发布。
 
 相关文档：
 
@@ -118,10 +105,9 @@ npm run deploy:bot -- --notice "订阅提醒支持更多任务类型，并改为
 
 | 命令 | 何时使用 |
 | --- | --- |
-| `npm run deploy` | 完整发布（代码 + DB + 重启） |
-| `npm run deploy:bot -- --notice "…"` | 验证并发布机器人，成功后自动发送私聊公告 |
+| `npm run deploy` | 完整发布博客（代码 + 子模块 + DB + 重启） |
 | `npm run db:migrate` | 仅应用 Prisma 迁移并重新生成 client |
-| `npm run build` | 构建 server、frontend 和 wf-bot |
+| `npm run build` | 构建 server 和 frontend |
 | `npm run dev:server` / `dev:frontend` | 开发模式 |
 
 ### 运行时拓扑
@@ -136,7 +122,6 @@ Internet ──► Nginx (80/443, TLS) ──┬─► 127.0.0.1:3000   blog-web
 | --- | --- | --- | --- |
 | `blog-web` | 3000 | 127.0.0.1 | Next.js `next start` |
 | `blog-api` | 3001 | 127.0.0.1 | NestJS 编译后产物 |
-| `blog-bot` | 5140 | 127.0.0.1 | Koishi；通过宿主机 3011 连接 NapCat |
 
 > 🔒 Web、API、Koishi 和 NapCat 端口均只监听回环地址；公网入口由 Nginx 收拢，端口 3000/3001 不直接对外暴露。
 
@@ -161,7 +146,7 @@ ss -tlnp | grep -E ':(3000|3001)'   # 确认服务只监听 127.0.0.1
 
 ## ⚙️ 环境变量
 
-博客变量详见 `packages/{server,frontend}/.env.example`，机器人变量保存在不入库的 `packages/wf-bot/.env`。关键项：
+博客变量详见 `packages/{server,frontend}/.env.example`。关键项：
 
 | 变量 | 用途 | 示例 |
 | --- | --- | --- |
@@ -170,10 +155,6 @@ ss -tlnp | grep -E ':(3000|3001)'   # 确认服务只监听 127.0.0.1
 | `SITE_URL` | 站点对外 URL（用于 RSS / sitemap） | `https://shichiya.cn` |
 | `HOST` / `PORT` | 后端监听地址与端口 | `127.0.0.1` / `3001` |
 | `API_URL` | 前端 SSR 调用后端的地址 | `http://127.0.0.1:3001` |
-| `ONEBOT_TOKEN` | Koishi 连接 NapCat 的访问令牌 | 与 NapCat 配置保持一致 |
-| `CHROME_PATH` | 机器人图片渲染使用的 Chrome 路径 | `/usr/bin/google-chrome` |
-
-机器人签到、积分、背包和战绩保存在 `packages/wf-bot/data/koishi.db`，部署脚本不会覆盖该目录。
 
 ## 🗃️ 数据模型
 
