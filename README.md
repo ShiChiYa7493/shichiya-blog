@@ -17,7 +17,6 @@
 - **文章特性**：Markdown + 代码高亮、自动目录、阅读量统计（按日去重）
 - **评论能力**：后端支持树形回复和审核状态；前台评论区目前未启用
 - **相册**：分类归档、图片直传
-- **Warframe QQ 机器人**：世界状态、订阅提醒、市场行情、资料查询（掉落、遗物反查支持“更多”续页）、模糊命令和群聊娱乐
 
 ## 🛠️ 技术栈
 
@@ -25,7 +24,6 @@
 | --- | --- |
 | 前端 | Next.js 14 (App Router) · React · Tailwind CSS · shadcn/ui · framer-motion |
 | 后端 | NestJS 10 · Prisma 6 · PostgreSQL · JWT (passport) |
-| 机器人 | Koishi 4 · OneBot 11 · NapCat · Puppeteer · SQLite |
 | 部署 | PM2 · Nginx · Let's Encrypt (certbot) |
 | 工程 | npm workspaces · TypeScript |
 
@@ -49,7 +47,7 @@ Warframe QQ 机器人：[ShiChiYa7493/warframe-bot](https://github.com/ShiChiYa7
 
 ### 环境要求
 
-- Node.js 20（仅博客）或 Node.js 22（机器人及仓库完整构建 / 发布）
+- Node.js 20
 - PostgreSQL ≥ 14
 
 ### 首次安装
@@ -93,13 +91,7 @@ cd ~/shichiya-blog && npm run deploy
 
 `npm run deploy` 等价于：`git pull → 更新子模块 → npm install → npm run db:migrate → npm run build → pm2 reload --update-env`。
 
-机器人的发布在 [warframe-bot](https://github.com/ShiChiYa7493/warframe-bot) 里进行，不从本仓库发布。
-
-相关文档：
-
-- [Warframe QQ 机器人与插件完整文档](./docs/warframe-bot.md)
-- [Warframe 机器人本地开发、测试与发布流程](./docs/wf-bot-development-release-workflow.md)
-- [Warframe 实时噩梦节点获取方案（截至 2026-08-06）](./docs/research/warframe-nightmare-live-nodes/report.md)
+机器人在独立仓库 [warframe-bot](https://github.com/ShiChiYa7493/warframe-bot) 里开发和发布。本仓库的 `scripts/deploy-wf-bot.sh` 已停用。
 
 ### npm 脚本一览
 
@@ -123,7 +115,7 @@ Internet ──► Nginx (80/443, TLS) ──┬─► 127.0.0.1:3000   blog-web
 | `blog-web` | 3000 | 127.0.0.1 | Next.js `next start` |
 | `blog-api` | 3001 | 127.0.0.1 | NestJS 编译后产物 |
 
-> 🔒 Web、API、Koishi 和 NapCat 端口均只监听回环地址；公网入口由 Nginx 收拢，端口 3000/3001 不直接对外暴露。
+> Web 和 API 只监听回环地址。公网入口由 Nginx 收拢，端口 3000 和 3001 不直接对外暴露。
 
 ### Nginx & HTTPS
 
