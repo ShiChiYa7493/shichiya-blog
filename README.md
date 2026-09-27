@@ -132,6 +132,8 @@ sudo certbot certificates           # 查看证书到期时间
 ss -tlnp | grep -E ':(3000|3001)'   # 确认服务只监听 127.0.0.1
 ```
 
+服务器上要安装的软件、环境变量和端口见 [环境配置](./docs/环境配置.md)。
+
 ## ⚙️ 环境变量
 
 博客变量详见 `packages/{server,frontend}/.env.example`。关键项：
