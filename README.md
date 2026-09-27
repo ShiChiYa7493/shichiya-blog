@@ -35,8 +35,7 @@ shichiya-blog/
 │   ├── frontend/                    子模块 blog-frontend（Next.js，端口 3000）
 │   └── server/                      子模块 blog-server（NestJS，端口 3001）
 ├── uploads/                         上传文件（Nginx 直接 alias）
-├── docs/                            运维、开发流程与专题研究
-├── scripts/                         部署脚本
+├── docs/                            环境配置与设计文档
 ├── ecosystem.config.js              PM2 配置
 └── nginx.conf.example               Nginx 反代示例
 ```
